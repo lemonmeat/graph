@@ -8,8 +8,10 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 
 ## Status
 
-- Phase 0 (explore and verify) is done. See `docs/PLAN.md` for the proposed architecture and phases. **Phase 1 is waiting for owner approval** and for answers to the open questions below.
-- Design decisions D1–D6 in `docs/DECISIONS.md` are all *Proposed*.
+- Phase 0 (explore and verify) is done. The owner approved the plan "with defaults" on 2026-10-03.
+- **Phase 1 (foundation) is done:** package `meagraph` with `io`, `probe`, `config`, `spiketrains` and a CLI (`meagraph info`, `meagraph probes`). See `docs/ARCHITECTURE.md`.
+- **Next is Phase 2:** preprocessing and detection reproducing `spikes.py`, plus a regression test. Ask Q8 (threshold) and Q9 (blanking) before choosing defaults beyond the legacy profile.
+- Decisions D1–D8 in `docs/DECISIONS.md` are Accepted.
 
 ## Hardware and data
 
@@ -38,25 +40,31 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **SpikeInterface** `read_mcsh5` gives correct values but drops `t_start`, ignores `RowIndex`, and has a wrong ADZero formula. Hence D1, a custom `BaseRecording`.
 - **SpikeInterface** `get_channel_locations()` defaults to 2D `xy`, and SI's sparsity and neighbour code uses that default. Always pass `axes="xyz"` (D3).
 - `stim_connectivity.py` cannot run on real files: it expects `[src N]` event labels that MCS does not write.
+- MCS segment streams can contain events from before the saved analog data starts. `read_mcs_spikes` drops them with a warning.
+- **SpikeInterface 0.105 probe handling:** `set_probe` is in-place only and requires one contact per channel. To drop unmapped channels such as the reference, use `select_channels_with_probe`; `attach_probe` already does this.
 
 ## Existing code
 
 - `spikes.py` is the current spike analysis script and the reference for regression tests. Its spike timestamps are relative to the first sample, not the recording clock.
 - `visualize.py` is the current viewer, including the 4x4x4 electrode selector that must be preserved. The UX contract is listed in `docs/EXISTING_CODE.md`.
 - `mcs.py`, `spontaneous_ccg.py`, `stim_audit.py` and `stim_connectivity.py` are also documented in `docs/EXISTING_CODE.md`.
+- **The legacy scripts are frozen (D7), bugs included.** Never run `spikes.py` without arguments in the repo root: it overwrites the sidecars. The regression baseline is the committed copy in `tests/data/legacy_baseline/`, protected by a checksum test.
 
 ## Environment
 
 - Python 3.13.13 in a uv-managed `.venv`. The venv has no pip; use `uv pip install --python .venv/bin/python ...`.
-- **Tested versions** (in a scratch venv, not yet in `.venv`): spikeinterface 0.105.0, probeinterface 0.4.0, neo 0.14.5, elephant 1.2.1, numpy 2.5.3.
+- **Installed in `.venv`:** spikeinterface 0.105.0, probeinterface 0.4.0, neo 0.14.5, elephant 1.2.1, numpy 2.5.3, pydantic 2.13, pytest 9.1, plus `meagraph` itself in editable mode.
+- To reinstall the package: `uv pip install --python .venv/bin/python -e ".[dev]"`.
+- **Tests:** `.venv/bin/python -m pytest`. Real-file tests are marked `data` and look for recordings in the repo root or in `$MEAGRAPH_DATA_DIR`.
 - **Primary machine:** MacBook Pro, Apple M3 Pro, 18 GB RAM. Avoid tools that require CUDA for core functionality; GPU spike sorters are optional extras only.
 - **Poppler is not installed,** so the Read tool cannot render PDFs. Use `pypdf` to extract text.
 
 ## Conventions
 
-- Package code lives in `src/`, installed in editable mode.
+- Package code lives in `src/meagraph`, installed in editable mode. The GUI goes in `apps/`.
 - Units are SI-based with explicit suffixes in names (`_s`, `_ms`, `_uv`, `_um`).
-- Time is in seconds on the MCS recording clock unless named otherwise (proposed D5). The first analog sample is at `t_start`.
+- Time is in seconds on the MCS recording clock unless named otherwise (D5). The first analog sample is at `t_start`.
+- Probe dimensions are placeholders until Q1 is answered (D8). Grid indices are exact; µm distances are not physical while `geometry_verified` is false.
 - Electrode identity is always carried as a stable channel ID (the MCS electrode label, e.g. `"47"`) with probe coordinates attached, never as a bare array index.
 - Configs are YAML, validated by typed models; outputs store the config and git hash used.
 - Run `pytest` before every commit.
@@ -83,6 +91,10 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q8.** Detection threshold for analysis.
 - **Q9.** Stimulation blanking strategy.
 - **Q10.** Connectivity significance defaults.
-- **Q11.** Package name.
-- **Q12.** Use the existing `.venv`?
-- **Q13.** Patch or freeze the legacy event-label bug.
+
+Resolved 2026-10-03 ("approved with defaults"):
+
+- **Q11.** Package name is `meagraph`.
+- **Q12.** Use the existing `.venv`.
+- **Q13.** Freeze the legacy scripts (D7).
+- Q1–Q3 are deferred, with placeholder geometry flagged (D8).

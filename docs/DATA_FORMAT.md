@@ -195,6 +195,8 @@ The stream is labelled `Stimulator (1);Stimulator; STG Events1` (`DataSubType = 
 
 **Cutouts:** 31 samples. `PreInterval` is 1000 µs and `PostInterval` is 2000 µs, so the detection sample is at index 10. Values are int32 in the source stream's ADC units, at the same 8.67 nV scale. Timestamps are in µs on the recording clock.
 
+**Events can predate the saved analog data.** In beforestim, 2 events (both streams) are timestamped at 0.4036 s, before the first analog sample at 0.5 s. MCS's online processing ran before saving started. `meagraph.io.read_mcs_spikes` drops such events with a warning.
+
 **Detector settings (threshold, polarity) are not stored.** From the data:
 
 - **Trough depth:** event troughs have a median of about −4.4 σ of the source stream.

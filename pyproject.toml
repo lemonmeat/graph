@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "meagraph"
+version = "0.1.0.dev0"
+description = "Functional connectivity, stimulation and reservoir analysis for 3D and planar MEA recordings (MCS HDF5)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # D6: SpikeInterface is pinned to a minor version because its API changes between minors.
+    "spikeinterface>=0.105,<0.106",
+    "probeinterface>=0.4,<0.5",
+    "h5py>=3.10",
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "pydantic>=2.6",
+    "pyyaml>=6",
+    "networkx>=3.2",
+    "neo>=0.14",
+    "elephant>=1.1",
+]
+
+[project.optional-dependencies]
+viewer = ["matplotlib>=3.8"]
+nwb = ["pynwb>=2.8"]
+glm = ["nemos"]
+synth = ["brian2"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+meagraph = "meagraph.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meagraph"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "data: needs the real MCS recordings (skipped when they are absent)",
+]

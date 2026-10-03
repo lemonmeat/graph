@@ -1,0 +1,12 @@
+# Standard MCS 60-electrode planar MEA, 8x8 grid without corners. Label = <column digit><row digit>.
+# Positions: x = (col - 1) * pitch_col_um, y = (row - 1) * pitch_row_um.
+name: mcs60_8x8_200um
+description: MCS 60-electrode planar MEA (8x8, 200 um pitch), e.g. 60MEA200/30iR
+ndim: 2
+map_file: mcs60_8x8_map.csv
+pitch_row_um: 200.0  # matches the legacy mcs.mea_geometry default; MEA type of the older recordings unverified (Q4)
+pitch_col_um: 200.0
+contact_radius_um: 15.0
+reference_labels: ["15"]  # internal reference electrode on standard MCS 60-electrode MEAs
+geometry_verified: false
+notes: Verify the MEA type of the older planar recordings (100 vs 200 um pitch) before using distances.

@@ -1,6 +1,16 @@
-# Refactor plan (proposed after Phase 0, awaiting approval)
+# Refactor plan
 
-Read alongside `DATA_FORMAT.md` (what the files contain), `EXISTING_CODE.md` (what the scripts do) and `DECISIONS.md` (proposed design choices D1–D6).
+Read alongside `DATA_FORMAT.md` (what the files contain), `EXISTING_CODE.md` (what the scripts do) and `DECISIONS.md` (design choices D1–D8).
+
+**Status (2026-10-03).** The owner approved the plan with defaults.
+
+| Phase | Status |
+|---|---|
+| 0 | done |
+| 1 | done |
+| 2 | next |
+
+Q11–Q13 are resolved: the package is `meagraph`, the existing `.venv` is used, and the legacy scripts are frozen. Q1–Q3 are deferred, with placeholder geometry flagged (D8).
 
 ## What Phase 0 changed about the plan
 

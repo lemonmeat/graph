@@ -10,7 +10,7 @@ Each entry records what was decided, why, and what evidence supports it. Status 
 
 ## D1. Custom MCS HDF5 `BaseRecording` instead of `spikeinterface.extractors.read_mcsh5`
 
-**Status:** Proposed (Phase 0, 2026-10-03)
+**Status:** Accepted 2026-10-03 (implemented in Phase 1: `meagraph.io.mcs_h5`)
 
 **Decision.** Write a thin `McsH5Recording(BaseRecording)` in `io/` that returns µV-scalable traces. It stays fully SpikeInterface-native: chunked `get_traces`, gains and offsets, properties, and `t_start`. Downstream preprocessing, peak detection, sorting and `SortingAnalyzer` all run on it unchanged.
 
@@ -32,7 +32,7 @@ Neo has no MCS HDF5 reader (`RawMCSRawIO` handles `.raw` only). McsPy (`McsPyDat
 
 ## D2. Analyse the raw stream; ignore MCS filter streams and MCS spike streams for analysis
 
-**Status:** Proposed
+**Status:** Accepted 2026-10-03
 
 **Decision.** All analysis starts from raw `Stream_0` and does its own filtering in documented SpikeInterface pipelines. The MCS filter streams remain selectable in the viewer. MCS Detector and Sorter events are readable, for comparison only.
 
@@ -47,7 +47,7 @@ Neo has no MCS HDF5 reader (`RawMCSRawIO` handles `.raw` only). McsPy (`McsPyDat
 
 ## D3. 3D geometry: never rely on SpikeInterface's default 2D channel locations
 
-**Status:** Proposed
+**Status:** Accepted 2026-10-03
 
 **Finding.** ProbeInterface stores a 3D probe correctly. However, `BaseRecording.get_channel_locations()` defaults to `axes="xy"`. SI code that builds channel neighbourhoods or sparsity calls it without `axes`: `core/sparsity.py` (radius sparsity), `core/recording_tools.py`, and the `matched_filtering` peak detector, observed in SI 0.105.0. For the cube, that silently projects onto x-y. Electrodes stacked in different layers then appear to be at distance 0.
 
@@ -64,7 +64,7 @@ This entry must be re-checked whenever the SI version changes.
 
 ## D4. Decode MCS entities by ID, not by row
 
-**Status:** Proposed
+**Status:** Accepted 2026-10-03
 
 **Decision.** Event datasets map as `EventEntity_<EventID>` and segment datasets as `SegmentData_<SegmentID>`, following the McsPy convention.
 
@@ -74,7 +74,7 @@ This entry must be re-checked whenever the SI version changes.
 
 ## D5. One time base: seconds on the MCS recording clock
 
-**Status:** Proposed
+**Status:** Accepted 2026-10-03
 
 **Decision.**
 
@@ -87,7 +87,7 @@ This entry must be re-checked whenever the SI version changes.
 
 ## D6. Environment and dependency policy
 
-**Status:** Proposed
+**Status:** Accepted 2026-10-03
 
 **Environment.** Keep the existing uv-managed `.venv` (Python 3.13.13). Make the package installable with `uv pip install -e .`.
 
@@ -104,4 +104,41 @@ This entry must be re-checked whenever the SI version changes.
 | `synth` | `brian2` |
 | `sorting` | CPU sorters only |
 
-**Phase 0 test.** SI 0.105.0, ProbeInterface 0.4.0, Neo 0.14.5 and Elephant 1.2.1 install and import cleanly on Python 3.13 and numpy 2.5.3. This was tested in a scratch venv; the project venv is untouched.
+**Phase 0 test.** SI 0.105.0, ProbeInterface 0.4.0, Neo 0.14.5 and Elephant 1.2.1 install and import cleanly on Python 3.13 and numpy 2.5.3. This was tested in a scratch venv.
+
+**Phase 1.** The core dependencies were installed into `.venv`. numpy, scipy, h5py and matplotlib kept their versions, and the legacy scripts still run. `te` and `sorting` extras are not declared yet; they are added once evaluated.
+
+---
+
+## D7. Package name, layout and the legacy scripts
+
+**Status:** Accepted 2026-10-03
+
+**Package.** The package is `meagraph` (src layout, hatchling, `meagraph` console command). The CLI lives inside the package so installing it provides the command.
+
+**Legacy scripts.** `mcs.py`, `spikes.py`, `visualize.py` and the other scripts stay frozen as the reference implementation, including the event-label bug. `spikes.py` output does not depend on event labels, so the regression baseline is unaffected. Fixes live only in `meagraph`.
+
+**Running the legacy scripts.** Do not run `spikes.py` with default arguments in the repo root: it overwrites the `*.spikes.h5` sidecars next to the recordings.
+
+**Regression baseline.** The baseline is a committed copy in `tests/data/legacy_baseline/`. It holds the three sidecars written 2026-09-30, after the last edit to `spikes.py`, plus a `SHA256SUMS` file. A test fails if the copy changes.
+
+---
+
+## D8. Placeholder geometry is explicit, never silent
+
+**Status:** Accepted 2026-10-03
+
+**Decision.** Until the owner supplies pitch, layer spacing and diameter (Q1), probe specs carry placeholder dimensions with `geometry_verified: false`:
+
+- cube: 100 µm everywhere;
+- planar: 200 µm, the legacy default.
+
+The flag is enforced in three places:
+
+- `attach_probe` emits `UnverifiedGeometryWarning`;
+- the recording and probe annotations carry `geometry_verified`;
+- `meagraph probes` prints "[placeholder geometry]".
+
+Grid indices (row, col, layer) are always exact. They are stored as channel properties, so the viewer and any grid-based analysis do not depend on the placeholders.
+
+**Rule for later phases.** Any analysis that interprets distances in µm, such as latency-versus-distance or spatial priors, must check `geometry_verified` and refuse or warn.

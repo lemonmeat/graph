@@ -1,7 +1,7 @@
 # Raw recordings and derived spike sidecars (never commit data)
 *.h5
-data/
-results/
+/data/
+/results/
 
 # Derived analysis outputs
 *.npz
@@ -15,3 +15,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .DS_Store
+
+# Exception: the legacy spikes.py outputs are the regression baseline (DECISIONS.md D7)
+!tests/data/legacy_baseline/*.spikes.h5
