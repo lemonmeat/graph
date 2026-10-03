@@ -1,0 +1,17 @@
+# Raw recordings and derived spike sidecars (never commit data)
+*.h5
+data/
+results/
+
+# Derived analysis outputs
+*.npz
+
+# Third-party papers
+papers/
+
+# Environment and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
