@@ -73,16 +73,45 @@ def test_stream_lineage(real_files):
         assert [s.name for s in inv.analog_streams] == ["Stream_0", "Stream_3", "Stream_2", "Stream_1"]
 
 
+# Known stimulation per recording (docs/DATA_FORMAT.md): {source: (pulses, pulse duration s)}.
+KNOWN_STIM = {
+    "2026-07-27T10-52-01": {},
+    "2026-07-27T11-15-56": {"STG 1": (26, 0.003)},
+    "2026-07-27T12-04-26": {"STG 1": (26, 0.003)},
+    "2026-07-29T15-16-32": {},
+    "2026-07-29T15-32-23": {"STG 1": (300, None), "STG 2": (300, None)},  # 2.0-2.1 ms pulses
+}
+
+
 def test_stimulation_protocol(real_files):
     for path in real_files:
-        stim = read_stim_events(path)
-        if "beforestim" in path.name:
-            assert stim == []
+        expected = KNOWN_STIM.get(path.name[:19])
+        if expected is None:
             continue
-        (s,) = stim
-        assert (s.source, s.kind, s.n) == ("STG 1", "Single Pulse", 26)
-        np.testing.assert_allclose(s.durations_s, 0.003, atol=1e-9)
-        np.testing.assert_allclose(np.diff(s.onsets_s), 4.003, atol=1e-9)
+        stim = {s.source: s for s in read_stim_events(path)}
+        assert {k: s.n for k, s in stim.items()} == {k: v[0] for k, v in expected.items()}, path.name
+        for source, (_, duration) in expected.items():
+            s = stim[source]
+            assert s.kind == "Single Pulse" and s.offsets_s is not None
+            if duration is not None:
+                np.testing.assert_allclose(s.durations_s, duration, atol=1e-9)
+    exp3 = [p for p in real_files if p.name.startswith("2026-07-27T11-15-56")]
+    if exp3:
+        np.testing.assert_allclose(np.diff(read_stim_events(exp3[0])[0].onsets_s), 4.003, atol=1e-9)
+
+
+def test_associative_protocol_structure(real_files):
+    """Trains of 1, 2 or 3 pulses every 5 s, in alternating blocks of 50 trains per STG output."""
+    from meagraph.stimulation import group_trains
+
+    path = _by_tag(real_files, "Associative Stimulation 1")
+    for s in read_stim_events(path):
+        trains = group_trains(s.onsets_s)
+        assert len(trains) == 150
+        assert sorted({len(t) for t in trains}) == [1, 2, 3]
+        starts = np.array([t[0] for t in trains])
+        gaps = np.round(np.diff(starts), 3)
+        assert set(gaps) == {5.0, 375.0} and (gaps == 375.0).sum() == 2
 
 
 def test_artifact_starts_at_pulse_start(real_files):
@@ -97,6 +126,20 @@ def test_artifact_starts_at_pulse_start(real_files):
         baseline_sd = np.std(x[:15])
         first = np.flatnonzero(np.abs(x - np.median(x[:15])) > 1000 + 20 * baseline_sd)[0] - 20
         assert 0 <= first <= 3
+
+
+def test_site_inference_on_real_stimulation(real_files):
+    from meagraph.stimulation import infer_site
+
+    for tag, site in (("11-15-56", "12"), ("stim47", "47")):
+        path = _by_tag(real_files, tag)
+        rec = McsH5Recording(path)
+        assert infer_site(rec, read_stim_events(path)[0]).site == site
+    path = _by_tag(real_files, "Associative Stimulation 1")
+    rec = McsH5Recording(path)
+    for stim in read_stim_events(path):
+        result = infer_site(rec, stim)
+        assert result.site is None and "ADC rail" in result.reason  # the whole array saturates
 
 
 def test_session_on_cube(real_files):

@@ -40,9 +40,10 @@ def short_label(label: str) -> str:
 
 def recording_group(f: h5py.File, recording_index: int = 0) -> h5py.Group:
     name = f"Data/Recording_{recording_index}"
+    if "Data" not in f:
+        raise ValueError(f"{f.filename} is not an MCS recording (no /Data group); is it a .spikes.h5 sidecar?")
     if name not in f:
-        available = sorted(f["Data"]) if "Data" in f else []
-        raise KeyError(f"{f.filename}: no {name}; available: {available}")
+        raise KeyError(f"{f.filename}: no {name}; available: {sorted(f['Data'])}")
     return f[name]
 
 

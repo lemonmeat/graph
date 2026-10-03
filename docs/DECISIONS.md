@@ -142,3 +142,140 @@ The flag is enforced in three places:
 Grid indices (row, col, layer) are always exact. They are stored as channel properties, so the viewer and any grid-based analysis do not depend on the placeholders.
 
 **Rule for later phases.** Any analysis that interprets distances in µm, such as latency-versus-distance or spatial priors, must check `geometry_verified` and refuse or warn.
+
+---
+
+## D9. Stimulation windows are bridged by a small custom preprocessor, not `remove_artifacts`
+
+**Status:** Accepted 2026-10-03 (Phase 2: `meagraph.preprocess.InterpolateWindowsRecording`)
+
+**Why not SpikeInterface's `remove_artifacts(mode="linear")`.** It does not fit, for three reasons found by reading its source in SI 0.105:
+
+1. It applies one `ms_before`/`ms_after` to every trigger and every channel. Adaptive blanking (D10) needs a different window per channel, and windows that span pulse onset to pulse offset when pulse length varies.
+2. It anchors the interpolation on 5-sample medians around the window edges rather than on the boundary samples, so it cannot reproduce `spikes.py`.
+3. Overlapping triggers are bridged one after another, so a later window can anchor inside an earlier one.
+
+**What the custom step does.** About 80 lines: it merges each channel's windows, then draws a straight line from the last sample before each window to the first sample after it. This is exactly the legacy rule.
+
+**Behaviour.** The step is chunk-safe: reads that cross a window fetch the anchor samples. A unit test checks that piecewise reads equal a full read.
+
+**Recording edges (the one deliberate difference).** At the start or end of the recording, where no anchor exists on one side, it holds the other anchor. Legacy used the channel median there.
+
+---
+
+## D10. Detection defaults (Q8, Q9) and the signal-quality control
+
+**Status:** Accepted 2026-10-03 (owner approved the recommended defaults)
+
+### Detection (Q8)
+
+The detection parameters are the `spikes.py` settings:
+
+| Setting | Value |
+|---|---|
+| Threshold | 5 × median(\|x\|)/0.6745 over the whole recording |
+| Filter | 3rd-order Butterworth, 300–3000 Hz, zero-phase |
+| Refractory / isolation | 1 ms |
+| Amplitude cap | 1000 µV |
+| Cutout | −1 to +2 ms |
+| Rebound rule | on |
+
+Connectivity analyses (Phase 4 onward) use only channels flagged **active** by the polarity control below. Spikes are still reported for every channel.
+
+### Blanking (Q9, profile `default`)
+
+For each STG output, `measure_recovery` works as follows:
+
+1. Bridge `[onset − 1 ms, offset + 1 ms)` and band-pass.
+2. Take the trial **median** of the band-passed epochs after the pulse offsets. This is the deterministic artifact. Evoked spikes are jittered and absent on many trials, so they barely move the median.
+3. Call a channel recovered once |median| stays below 1 single-trial noise σ for 1 ms.
+
+Each channel is then blanked over `[onset − 1 ms, offset + recovery)`:
+
+- **Bounds:** recovery is at least 1 ms. It is capped at 50 ms; channels still showing artifact at the cap are blanked for the full 50 ms.
+- **Guard:** peaks less than 1 ms after a window are dropped, as in legacy.
+- **Stimulation sites:** sites given in the config or `--stim-site` are excluded from detection entirely.
+
+The `legacy` profile keeps the old fixed rule: −1/+6 ms around every Start and Stop event, with no site exclusion. It exists for the regression test.
+
+**Measured recovery after pulse offset:**
+
+| Recording | Median | Slowest channels |
+|---|---|---|
+| exp3 | 5 ms | the stimulating electrode, 9–11 ms |
+| Associative (DIV142) | 6.6–6.8 ms | 17 ms |
+
+For comparison, legacy blanking effectively ended 7 ms after the offset for every channel.
+
+### Polarity control (QC)
+
+**Principle.** Extracellular spikes are mostly negative-going, while noise crossings are symmetric.
+
+**Counting.** For each channel, threshold crossings of either sign closer than one cutout span (3 ms) form one **event**. The event's polarity is that of its largest peak. Count negative and positive events, excluding pulses and the 50 ms after each one (`qc_exclude_post_ms`), where evoked responses and artifact residue are not spontaneous-like.
+
+**Decision.** A channel is **active** when a one-sided binomial test of negative > positive gives p < 0.001 and it has at least 20 negative events.
+
+**Why events, not peaks.** Two simpler versions failed synthetic tests:
+
+- *Counting raw peaks.* After band-passing, a spike's positive overshoot often also crosses +5σ, so every spike counted once on each side and real units looked like noise.
+- *Ignoring positive peaks near a negative peak.* Symmetric ringing bursts then produced a false negative excess; this is how noisy channel 41 was flagged in DIV142.
+
+With events, a spike counts as negative because its trough outweighs its overshoot. A symmetric burst is equally likely to count either way, so under the null the counts are binomial with p = ½. `tests/test_detection.py` covers both cases.
+
+**Limitations.** This is a heuristic. It can miss genuinely positive-going units, and a strongly bursting channel can still pass.
+
+---
+
+## D11. Regression tolerances against `spikes.py`
+
+**Status:** Accepted 2026-10-03 (`tests/test_regression.py`)
+
+**Tolerances.** The `legacy` profile must reproduce the committed baseline as follows:
+
+- ≥ 99 % of spikes matched within ±1 sample, in both directions;
+- σ within 0.1 %;
+- spikes at the same sample have filtered waveforms within 0.01 µV.
+
+Spikes in the first 50 ms are ignored, because of the D9 edge rule.
+
+**Measured.** 99.2–100 % matched. σ is within 0.03 %; the 3rd-order SpikeInterface filter chain matches `sosfiltfilt` to 2×10⁻⁶ µV. Waveforms at the same sample are identical.
+
+**Remaining differences (for completeness).** Besides the t = 0 edge, a few spikes inside bursts differ in peak selection:
+
+- `scipy.find_peaks(distance=…)` suppresses neighbours greedily, so a small peak survives when its larger neighbour was itself suppressed.
+- SpikeInterface's `by_channel` keeps only peaks that are the minimum within ±1 ms.
+
+The SI rule is the stricter one. It is used for all profiles.
+
+**Noise estimate.** `median_abs_noise_uv` computes the legacy whole-recording median with a logarithmic histogram, which gives < 0.03 % error in one chunked pass. SpikeInterface's `get_noise_levels` samples random chunks instead, which is not reproducible to that precision.
+
+---
+
+## D12. The viewer is custom matplotlib, inside the package
+
+**Status:** Accepted 2026-10-03 (Phase 3: `meagraph.viewer`, `meagraph view`)
+
+**Options evaluated** (SI 0.105):
+
+| Option | Why not |
+|---|---|
+| `spikeinterface.widgets` | Mostly static figures built around sorted units and `SortingAnalyzer`. The interactive backends each add a heavy dependency: `ipywidgets` (Jupyter only), `ephyviewer` (PyQt), `sortingview`/`figpack` (web, cloud-backed). None has a clickable 3D electrode selector. |
+| `spikeinterface-gui` | A curation GUI for sorted units. It needs a full `SortingAnalyzer` and Qt or panel, and its probe view is 2D. |
+| `probeinterface.plotting` | Can draw a 3D probe but has no picking. |
+
+**Choice.** Keep the legacy matplotlib UX (`docs/EXISTING_CODE.md`), rebuilt on the package API.
+
+- `meagraph.viz` holds reusable drawing functions (cube map, raster, trace, waveforms) that also work in notebooks and report figures.
+- `meagraph.viewer` is about 250 lines of state and interaction.
+- **Dependency:** matplotlib only (the `viewer` extra). It runs anywhere with no Qt, Jupyter or account.
+- **Launch:** `meagraph view file.h5`.
+
+**Location.** It lives in the package rather than `apps/viewer/`, so one install provides it. The core library never imports it.
+
+**Behaviour changes from `visualize.py`:**
+
+- stimulation lines at pulse onset (the legacy label bug is gone), coloured per STG output;
+- the reference electrode `15` is not listed;
+- analog streams are listed in processing order;
+- QC-active electrodes have a dark rim;
+- spikes come from `meagraph detect` results, falling back to a legacy sidecar.

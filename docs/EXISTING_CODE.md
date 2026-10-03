@@ -1,6 +1,8 @@
 # Existing code (Phase 0 snapshot)
 
-Snapshot of the pre-refactor scripts as of 2026-10-03. These are the reference implementation. `spikes.py` is the regression baseline, and the viewer UX in `visualize.py` must survive the refactor. Line numbers refer to this snapshot.
+Snapshot of the pre-refactor scripts as of 2026-10-03.
+
+**Replacements (Phases 2–3).** `spikes.py` is reproduced by `meagraph detect --profile legacy` (`tests/test_regression.py`), `visualize.py` by `meagraph view`, and `stim_audit.py` by `meagraph audit`. The old scripts stay until the owner approves retiring them. These are the reference implementation. `spikes.py` is the regression baseline, and the viewer UX in `visualize.py` must survive the refactor. Line numbers refer to this snapshot.
 
 The scripts form a flat layout around a shared reader:
 

@@ -1,17 +1,18 @@
 # 4x4x4 folded 3D array (3D-MIND design, Kumar et al. 2026) recorded on an MCS MEA2100-Mini.
-# Grid indices come from MEA_CUBE in the legacy mcs.py (provenance TODO: owner, Q2).
+# Grid indices come from MEA_CUBE in the legacy mcs.py; they encode how the headstage channels are
+# wired to the electrodes of the folded array (confirmed by the owner, 2026-10-03).
 # Positions: x = (col - 1) * pitch_col_um, y = (row - 1) * pitch_row_um, z = (layer - 1) * layer_spacing_um.
 name: cube4x4x4_E-00303
 description: Custom 4x4x4 3D MEA, device E-00303, 59 recording contacts on a 64-cell grid
 ndim: 3
 map_file: cube4x4x4_E-00303_map.csv
-# PLACEHOLDERS until the owner supplies real values (Q1). Nothing distance-based may be
+# PLACEHOLDERS until the owner supplies pitch, layer spacing and diameter (Q1). Nothing distance-based may be
 # interpreted physically while geometry_verified is false.
 pitch_row_um: 100.0
 pitch_col_um: 100.0
 layer_spacing_um: 100.0
 contact_radius_um: 15.0  # Kumar et al. 2026 report 30 um diameter sensors; unverified for this device
-reference_labels: ["15"]  # behaves like the reference (no signal, 0.7 uV noise); unverified (Q3)
+reference_labels: ["15"]  # reference electrode (confirmed by the owner, 2026-10-03)
 geometry_verified: false
 notes: >-
   Layer 1 assumed to be the bottom layer (as in the paper); contacts assumed to face +z.

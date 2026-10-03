@@ -1,3 +1,16 @@
-"""Threshold spike detection, signal-quality controls and burst detection (Phase 2).
+"""Spike detection, signal-quality control, and result storage."""
 
-Planned; see docs/PLAN.md."""
+from meagraph.detect.noise import median_abs_noise_uv
+from meagraph.detect.store import load_detection, save_detection
+from meagraph.detect.threshold import PROFILES, ChannelQC, DetectionConfig, DetectionResult, detect_spikes
+
+__all__ = [
+    "PROFILES",
+    "ChannelQC",
+    "DetectionConfig",
+    "DetectionResult",
+    "detect_spikes",
+    "load_detection",
+    "median_abs_noise_uv",
+    "save_detection",
+]

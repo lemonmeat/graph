@@ -8,7 +8,17 @@ Read alongside `DATA_FORMAT.md` (what the files contain), `EXISTING_CODE.md` (wh
 |---|---|
 | 0 | done |
 | 1 | done |
-| 2 | next |
+| 2 | done |
+| 3 | done |
+| 4 | next |
+
+Also resolved:
+
+- **Q2, Q3:** 15 is the reference; the map is the headstage wiring.
+- **Q8, Q9:** defaults approved; see D10.
+- **Viewer:** custom matplotlib inside the package (D12).
+
+New open questions: Q14 (sites in the associative file) and Q15 (stim47 QC).
 
 Q11–Q13 are resolved: the package is `meagraph`, the existing `.venv` is used, and the legacy scripts are frozen. Q1–Q3 are deferred, with placeholder geometry flagged (D8).
 

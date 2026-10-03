@@ -9,18 +9,22 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 ## Status
 
 - Phase 0 (explore and verify) is done. The owner approved the plan "with defaults" on 2026-10-03.
-- **Phase 1 (foundation) is done:** package `meagraph` with `io`, `probe`, `config`, `spiketrains` and a CLI (`meagraph info`, `meagraph probes`). See `docs/ARCHITECTURE.md`.
-- **Next is Phase 2:** preprocessing and detection reproducing `spikes.py`, plus a regression test. Ask Q8 (threshold) and Q9 (blanking) before choosing defaults beyond the legacy profile.
-- Decisions D1–D8 in `docs/DECISIONS.md` are Accepted.
+- **Phase 1 (foundation) is done:** package `meagraph` with `io`, `probe`, `config`, `spiketrains`. See `docs/ARCHITECTURE.md`.
+- **Phases 2 and 3 are done** (2026-10-03):
+  - **Phase 2:** detection with `legacy` and `default` profiles, polarity QC, stimulation audit, CLI `audit`/`detect`, and a regression test against `spikes.py` that passes.
+  - **Phase 3:** the viewer (`meagraph view`, custom matplotlib per D12).
+- **Next is Phase 4:** synthetic ground truth and the first connectivity estimators. Ask Q10 (significance defaults) first.
+- Decisions D1–D12 in `docs/DECISIONS.md` are Accepted.
+- **Retiring the legacy scripts** (`spikes.py`, `visualize.py`) awaits owner approval. The regression test passes and `meagraph view` replaces the viewer.
 
 ## Hardware and data
 
 - **Recording hardware:** MCS MEA2100-Mini with STG stimulator (verified from stream labels). MEA layout string: `ME21Combi60`.
-- **Array:** custom 4x4x4 grid, but **only 60 channels are recorded**. 59 sit on the cube; label `15` behaves like the reference electrode (TODO: confirm). 5 grid cells are empty.
+- **Array:** custom 4x4x4 grid, but **only 60 channels are recorded**. 59 sit on the cube, and label `15` is the reference electrode (owner confirmed). 5 grid cells are empty.
   - Electrode pitch within a layer: TODO µm.
   - Layer spacing: TODO µm (the paper reports 25–250 µm spacers).
   - Electrode diameter: TODO (the paper says 30 µm).
-- **Channel map:** label → (row, col, layer) is `MEA_CUBE` in `mcs.py`, reproduced in `docs/DATA_FORMAT.md`. Its provenance is TODO, and the data cannot validate it.
+- **Channel map:** label → (row, col, layer) is `MEA_CUBE` in `mcs.py`, now `src/meagraph/probe/data/cube4x4x4_E-00303_map.csv`. It encodes the headstage-to-electrode wiring (owner confirmed).
 - **File format:** MCS HDF5, Multi Channel Experimenter 2.21 / DataManager 1.14, protocol RawData v3. Full layout in `docs/DATA_FORMAT.md`.
 - **Sampling rate:** 10 kHz in the current files (`Tick` = 100 µs). Always read it from `InfoChannel.Tick`.
 - **Analog stream index is not processing order.** `Stream_0` = raw, `Stream_3` = Filter 1, `Stream_2` = Filter 2, `Stream_1` = Filter 3. Select by label or lineage.
@@ -31,11 +35,18 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - TODO: amplitude units and mode.
 - **Older recordings** come from a standard 60-channel planar MEA. The pipeline should handle both through swappable probe definitions (TODO: MEA type and sample files).
 - **Recording types:** spontaneous activity and electrical stimulation sessions, including before/after stimulation blocks for plasticity comparison.
-- **Sample data location:** repo root, 3 files from exp3 DIV140 (2026-07-27), plus `*.spikes.h5` sidecars from `spikes.py`. Raw data is git-ignored.
+- **Sample data location:** repo root. Raw data and `results/` are git-ignored.
+  - 3 files from exp3 DIV140 (2026-07-27), plus `*.spikes.h5` sidecars from `spikes.py`.
+  - 2 files from DIV142 (2026-07-29): a 10 min spontaneous recording, and a 32 min (8 GB) "Associative Stimulation 1" recording using STG 1 + STG 2. Their names contain spaces.
+- **Associative protocol:** single pulses of about 2 ms; trains of 1/2/3 pulses every 5 s; alternating 50-train blocks per STG output. The whole array saturates during pulses, so the **stimulated sites cannot be inferred (Q14)**.
 
 ## Key Phase 0 findings (do not rediscover)
 
-- **Signal quality is the binding constraint.** On most electrodes, negative and positive threshold crossings are about equally frequent, which looks like noise. Only electrode 12 has robust negative-going spiking. MCS detector output is mostly noise in baseline, and 55 % of it is stimulation artifact in stim files. Details: `docs/DATA_FORMAT.md` § Signal quality.
+- **Signal quality.**
+  - exp3 (DIV140) is noise-dominated: only electrode 12 passes the polarity QC.
+  - DIV142 is much better: 8 active channels in the spontaneous file (14, 23, 22, 32, 72, 87, 78, 57).
+  - MCS detector output is mostly noise in baseline, and 55 % of it is artifact in stim files.
+  - Details: `docs/DATA_FORMAT.md` and `docs/DECISIONS.md` D10.
 - **`mcs.py` labels events off by one** (Start is shown as Stop). Do not reuse `mcs.triggers()` labels. See `docs/EXISTING_CODE.md`.
 - **SpikeInterface** `read_mcsh5` gives correct values but drops `t_start`, ignores `RowIndex`, and has a wrong ADZero formula. Hence D1, a custom `BaseRecording`.
 - **SpikeInterface** `get_channel_locations()` defaults to 2D `xy`, and SI's sparsity and neighbour code uses that default. Always pass `axes="xyz"` (D3).
@@ -82,17 +93,24 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 The full list with context is in `docs/PLAN.md` § Open questions.
 
 - **Q1.** Pitch, layer spacing, electrode diameter, layer orientation.
-- **Q2.** Provenance of `MEA_CUBE`. Are the 5 empty cells absent or unwired?
-- **Q3.** Is `15` the reference electrode?
+- **Q2 (remaining part).** Are the 5 empty cells absent, or present but unwired?
 - **Q4.** Planar 60 MEA type and sample files.
 - **Q5.** MCS Filter 1/2/3 and Spike Detector settings.
-- **Q6.** Stimulation amplitude units and mode, polarity, and the site for the 11-15 file (the artifact says 12).
+- **Q6.** Stimulation amplitude units and mode, polarity, and the site for the 11-15 file. The artifact says 12, and Phase 2 results used 12.
 - **Q7.** Afterstim baseline, longer or more active recordings, and the `data/` folder.
 - **Q8.** Detection threshold for analysis.
 - **Q9.** Stimulation blanking strategy.
 - **Q10.** Connectivity significance defaults.
+- **Q14.** Which electrodes did STG 1 and STG 2 drive in the DIV142 associative file? They cannot be inferred from the data.
+- **Q15.** In stim47, positive QC events are elevated on several channels. Are slow artifact components outlasting the 50 ms QC exclusion? Check in Phase 6.
 
-Resolved 2026-10-03 ("approved with defaults"):
+Resolved 2026-10-03:
+
+- **Q3.** 15 is the reference.
+- **Q2 (provenance).** The map is the headstage wiring.
+- **Q8 / Q9.** The recommended defaults are approved (D10).
+
+Resolved earlier on 2026-10-03 ("approved with defaults"):
 
 - **Q11.** Package name is `meagraph`.
 - **Q12.** Use the existing `.venv`.

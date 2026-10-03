@@ -76,6 +76,9 @@ class McsH5Recording(BaseRecording):
         self.set_property("mcs_label", np.array(labels))
         self.set_property("mcs_channel_id", table["ChannelID"].astype(np.int64))
         self.set_property("mcs_row_index", row_index)
+        # Largest representable |signal| (µV): stimulation artifacts that reach it are saturated.
+        adc_max = 2.0 ** (table["ADCBits"].astype(np.float64) - 1) - 1
+        self.set_property("adc_rail_uv", np.minimum(adc_max - table["ADZero"], adc_max + table["ADZero"]) * gains_uv)
         self.annotate(
             mcs_stream_label=stream_info.label,
             mcs_stream_guid=stream_info.guid,

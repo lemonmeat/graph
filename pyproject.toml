@@ -39,4 +39,5 @@ packages = ["src/meagraph"]
 testpaths = ["tests"]
 markers = [
     "data: needs the real MCS recordings (skipped when they are absent)",
+    "slow: runs the full pipeline on real recordings (about a minute); deselect with -m 'not slow'",
 ]

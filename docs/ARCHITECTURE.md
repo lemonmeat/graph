@@ -10,36 +10,42 @@ This is a working draft that grows with each phase; Phase 7 finalises it. The ro
 - **Electrode identity:** the electrode label string (`"47"`), with probe coordinates attached.
 - **Geometry and parameters are data** (probe YAML + CSV, config YAML). Outputs record their config and provenance.
 
-## Data flow (implemented through Phase 1)
+## Data flow (implemented through Phase 3)
 
 ```
-recording.h5 ──► io.McsH5Recording ──► probe.attach_probe ──► Session.recording (lazy, 3D probe, t_start)
-      │                                      ▲
-      │                       probe.load_probe_spec (YAML + CSV map)
-      ├────────► io.read_stim_events ──► Session.stim (onsets/offsets; site from config)
-      ├────────► io.read_mcs_spikes  ──► SpikeTrains (MCS online detections, comparison only)
-      └────────► io.inspect_file     ──► FileInventory (`meagraph info`)
-legacy *.spikes.h5 ──► io.read_spikes_sidecar ──► LegacySpikes (regression baseline)
+recording.h5 ──► io.load_session ──► Session
+                   │  McsH5Recording (lazy, t_start) + probe.attach_probe (3D, grid properties)
+                   │  read_stim_events (onsets/offsets; site from config, never from the file)
+                   ▼
+       stimulation.measure_recovery ──► per-channel blanking windows      (default profile)
+       stimulation.fixed_windows    ──► shared legacy windows             (legacy profile)
+                   ▼
+       preprocess.detection_band: scale_to_uV → InterpolateWindowsRecording → bandpass (SI)
+                   ▼
+       detect.median_abs_noise_uv ─► SI detect_peaks(by_channel, both signs)
+                   ▼                     ├─ negative peaks → guard, cap, rebound → SpikeTrains + waveforms
+                   ▼                     └─ all peaks → polarity-control events → ChannelQC (active channels)
+       detect.save_detection ──► results/<recording>/detect_<profile>/ (npz, csv, config, provenance)
+                   ▼
+       viewer (meagraph view) ◄── load_detection, or a legacy *.spikes.h5 sidecar
 ```
 
-Phase 2 adds `preprocess` and `detect` between `Session.recording` and `SpikeTrains`. Later phases consume `SpikeTrains` and `Session.stim`.
+Later phases consume `SpikeTrains`, `DetectionResult.active_channels` and `Session.stim`.
 
 ## Modules
 
 | Module | Status | Responsibility |
 |---|---|---|
-| `io._mcs_layout` | done | MCS layout rules: stream discovery and lineage, label decoding, time stamps |
-| `io.mcs_h5` | done | `McsH5Recording(BaseRecording)` (D1) |
-| `io.mcs_events` | done | `EventEntity`, `StimEvents`, `read_stim_events`, `read_mcs_spikes` (D4) |
-| `io.inventory` | done | `inspect_file`, `format_inventory` |
-| `io.legacy` | done | `read_spikes_sidecar` for `spikes.py` output |
-| `io.session` | done | `Session`, `load_session(SessionConfig)` |
-| `probe` | done | `ProbeSpec` (data), `build_probe`, `attach_probe`, 3D positions and distances (D3, D8) |
-| `config` | done | `SessionConfig`, YAML I/O, `collect_provenance`, `write_run_folder` |
+| `io` | done | MCS reader (D1), events (D4), MCS spike streams, inventory, legacy sidecars, `Session` |
+| `probe` | done | `ProbeSpec` data files, ProbeInterface probes, 3D positions and distances (D3, D8) |
+| `config` | done | `SessionConfig`, YAML I/O, provenance, run folders |
 | `spiketrains` | done | `SpikeTrains` with SpikeInterface `Sorting` conversion |
-| `cli` | partial | `meagraph info`, `meagraph probes` |
-| `preprocess`, `detect`, `stimulation` | Phase 2 | |
-| `viz`, `apps/viewer` | Phase 3 | |
+| `preprocess` | done | `InterpolateWindowsRecording` (D9), `detection_band` |
+| `stimulation` | done | fixed and per-pulse windows, `measure_recovery`, `infer_site`, `audit_stimulation` |
+| `detect` | done | `DetectionConfig` profiles, `detect_spikes`, polarity QC (D10), noise, save/load |
+| `viz` | done | `plot_cube_map`, `plot_raster`, `plot_trace`, `plot_waveforms` (matplotlib, no I/O) |
+| `viewer` | done | interactive viewer (D12), `meagraph view`; never imported by the core |
+| `cli` | done | `info`, `probes`, `audit`, `detect`, `view` |
 | `connectivity`, `synth`, `benchmark` | Phases 4–5 | |
 | `reservoir`, `realtime` | Phase 7 | |
 
@@ -54,6 +60,10 @@ Phase 2 adds `preprocess` and `detect` between `Session.recording` and `SpikeTra
 A spec can also live outside the package; pass its YAML path instead of a name.
 
 **Another MCS stream.** Analog streams are selected by label (`stream="Filter (3)"`), or by `"raw"` for the hardware stream. Segment streams are selected by label (`"Spike Detector"`, `"Spike Sorter"`). New entity types belong in `io/mcs_events.py` and must be decoded by their ID, not by table row.
+
+**A detection setting.** Every parameter is a field of `DetectionConfig`. Pass a modified copy: `PROFILES["default"].model_copy(update={...})`. Results record the config they were made with.
+
+**A figure.** Add a function to `meagraph.viz` that takes data and an optional `ax` and returns artists. The viewer and notebooks can then share it.
 
 **Connectivity estimators, encoders and decoders** get their interfaces in Phases 4 and 7.
 

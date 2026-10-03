@@ -1,6 +1,6 @@
 # MCS HDF5 data format (as observed)
 
-This document describes what is actually in this lab's files, not what the MCS specification allows. It was verified on 2026-10-03 with h5py 3.16 on three recordings from device `E-00303` (exp3, DIV140, 2026-07-27). Items marked **(unverified)** need confirmation from the owner.
+This document describes what is actually in this lab's files, not what the MCS specification allows. It was verified on 2026-10-03 with h5py 3.16 on five recordings from device `E-00303`: three from exp3 (DIV140, 2026-07-27) and two from DIV142 (2026-07-29). Items marked **(unverified)** need confirmation from the owner.
 
 ## Files examined
 
@@ -9,6 +9,10 @@ This document describes what is actually in this lab's files, not what the MCS s
 | beforestim | `2026-07-27T10-52-01nic_exp3_plastic_DIV140_beforestim_E-00303.h5` (1.39 GB) | 317.1 s | 0.5 s | none |
 | stim | `2026-07-27T11-15-56..._stim_500width_500amplitude_4s_interval_3pulse_E-00303.h5` (444 MB) | 100.2111 s | 0 s | 26 trains; site inferred as **12** |
 | stim47 | `2026-07-27T12-04-26..._stim_..._3pulse_stim47_E-00303.h5` (447 MB) | 100.2872 s | 0 s | 26 trains; site inferred as **47** (matches filename) |
+| DIV142 spontaneous | `2026-07-29T15-16-32Flex Electronics Nick Acrylic Day 142_E-00303.h5` (2.5 GB) | 600.2 s | 0 s | none |
+| DIV142 associative | `2026-07-29T15-32-23Flex Electronics Nick Acrylic Day 142 Associative Stimulation 1_E-00303.h5` (8.0 GB) | 1920.2 s | 0 s | STG 1 and STG 2, 300 pulses each; **sites cannot be inferred** (see below) |
+
+**Structure of the DIV142 files.** Both have the same structure as the exp3 files: 60 channels, 10 kHz, the same four analog streams and lineage, and MCS spike streams. Their names contain spaces, so quote them in shells.
 
 **Provenance attributes.** Root attributes: Multi Channel DataManager 1.14.10, `McsHdf5ProtocolType = RawData`, protocol version 3, McsDataTools 1.7.1.15. `/Data` attributes: `ProgramName = Multi Channel Experimenter 2.21.1`, `MeaLayout = MeaName = "ME21Combi60"`, `Date`, `DateInTicks` (.NET ticks), `FileGUID`. `/Data/Recording_0` attributes: `Duration` (µs; equals the end of data on the recording clock) and `TimeStamp` (µs).
 
@@ -102,7 +106,7 @@ Channel order (InfoChannel order, identical in all files and all four streams):
 
 **Only 60 channels are recorded, not 64.** `MEA_CUBE` in `mcs.py` places 59 labels on the 4×4×4 grid. Label `15` is not placed. Five cells are empty, as (row, col, layer): (1,2,4), (1,3,4), (1,4,4), (4,3,4), (4,4,4).
 
-**Label `15` behaves like the MCS reference electrode.** Its noise is 0.73 µV and it shows no spikes. Its stimulation artifact is 137–237 µV, against ≥ 7 mV on every other channel. On standard MCS 60-electrode layouts, 15 is the internal reference. **(unverified for this device)**
+**Label `15` is the reference electrode** (confirmed by the owner, 2026-10-03). Consistent with that, its noise is 0.73 µV, it shows no spikes, and its stimulation artifact is 137–237 µV, against ≥ 7 mV on every other channel.
 
 The current map (`MEA_CUBE`, as (row, col) per layer):
 
@@ -142,7 +146,7 @@ The current map (`MEA_CUBE`, as (row, col) per layer):
 | 3 | 53 | 51 | 52 | 42 |
 | 4 | 24 | 14 | · | · |
 
-**The map cannot be validated from the data.** It is not stored in the file. A spatial check gave no confirmation: stimulation-artifact amplitude does not fall off with grid distance from the stimulated site (Spearman ρ = −0.06, p = 0.63 for stim at 12; ρ = −0.18, p = 0.19 for stim at 47). The artifact is larger on electrodes that share the stimulated electrode's *row* (median 19.1 vs 14.8 mV for stim 12, and 23.5 vs 16.9 mV for stim 47). That pattern points to crosstalk along shared interconnects rather than conduction through tissue. Its provenance (pad drawing, fabrication mask) must come from the owner.
+**The map cannot be validated from the data.** It is not stored in the file. A spatial check gave no confirmation: stimulation-artifact amplitude does not fall off with grid distance from the stimulated site (Spearman ρ = −0.06, p = 0.63 for stim at 12; ρ = −0.18, p = 0.19 for stim at 47). The artifact is larger on electrodes that share the stimulated electrode's *row* (median 19.1 vs 14.8 mV for stim 12, and 23.5 vs 16.9 mV for stim 47). That pattern points to crosstalk along shared interconnects rather than conduction through tissue. **Provenance (owner, 2026-10-03):** the map encodes how the headstage channels are wired to the electrodes of the folded array.
 
 **Physical units are unknown (unverified).** Electrode pitch within a layer, layer spacing, and contact orientation are needed. Kumar et al. 2026 give a 30 µm sensor diameter, SU-8 spacers of 25–250 µm per device, and layer 1 = bottom. The in-layer pitch is not stated in the main text.
 
@@ -185,6 +189,37 @@ The stream is labelled `Stimulator (1);Stimulator; STG Events1` (`DataSubType = 
   - Electrode 47 rebounds to **+43 mV at +6 ms** and is still drifting, so it is unusable for tens of ms.
 - **Other electrodes:** peak artifact of **7–37 mV**, larger on same-row electrodes. Electrode 15 sees about 0.2 mV.
 - **Stimulated site:** taken as the largest-artifact channel. This is **12** for the 11-15 file, where the filename does not say, and **47** for the 12-04 file, which agrees with "stim47".
+
+### Associative stimulation protocol (DIV142)
+
+This file uses both STG outputs:
+
+| Event | Entity |
+|---|---|
+| STG 1 Single Pulse Start / Stop | EventEntity 1 / 2 |
+| STG 2 Single Pulse Start / Stop | EventEntity 5 / 6 |
+
+**Events mark individual pulses.** In the exp3 files, one event spanned a whole 3-pulse burst. Here each event is a single pulse.
+
+- **Pulses:** Start to Stop is 2.0–2.1 ms. The raw artifact shows about 1 ms per phase.
+- **Trains:** every 5 s (0.2 Hz). Each train has 1, 2 or 3 pulses, 3 ms apart onset to onset, cycling 1-2-3. Each output delivers 150 trains and 300 pulses.
+- **Blocks:** the outputs alternate in blocks of 50 trains (245 s), with a 375 s gap between one output's blocks:
+
+  | STG output | Blocks (s) |
+  |---|---|
+  | STG 2 | 60–305, 680–925, 1300–1545 |
+  | STG 1 | 370–615, 990–1235, 1610–1855 |
+
+  The two outputs never fire together.
+
+**The stimulated sites cannot be inferred.** During every pulse, 36 (STG 1) or 38 (STG 2) of the 59 channels reach the ADC rail (±72.7 mV). After each pulse, every channel carries a 4–10 mV offset that decays over tens of ms. **Which electrodes STG 1 and STG 2 drove must come from the owner (Q14).**
+
+**Artifact recovery** (`meagraph audit`), in the detection band after a 1 ms post-pulse blank:
+
+| Recording | Median | 90th percentile | Slowest |
+|---|---|---|---|
+| exp3 | 5.0–5.3 ms | 5.4–6.8 ms | the stimulating electrode, 9.3 ms (12) and 10.8 ms (47) |
+| DIV142 associative | 6.6–6.8 ms | 7.1 ms | 17.1 ms (56, STG 2) |
 
 ## MCS online spike streams: `SegmentStream`
 
