@@ -1,3 +1,5 @@
-"""Synthetic ground-truth networks on any probe geometry (Phase 4).
+"""Synthetic ground truth: spiking networks with known directed connections."""
 
-Planned; see docs/PLAN.md."""
+from meagraph.synth.hawkes import NetworkConfig, SyntheticNetwork, simulate_network
+
+__all__ = ["NetworkConfig", "SyntheticNetwork", "simulate_network"]

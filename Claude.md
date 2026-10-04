@@ -13,8 +13,14 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **Phases 2 and 3 are done** (2026-10-03):
   - **Phase 2:** detection with `legacy` and `default` profiles, polarity QC, stimulation audit, CLI `audit`/`detect`, and a regression test against `spikes.py` that passes.
   - **Phase 3:** the viewer (`meagraph view`, custom matplotlib per D12).
-- **Next is Phase 4:** synthetic ground truth and the first connectivity estimators. Ask Q10 (significance defaults) first.
-- Decisions D1–D12 in `docs/DECISIONS.md` are Accepted.
+- **Phase 4 is done** (2026-10-04):
+  - connectivity core (`cch_hollow`, `cch_jitter`, `sttc`), with fitted-tail p-values (D17) and the burst control;
+  - ISI_N network bursts;
+  - Hawkes simulator and benchmark;
+  - `meagraph graph` and `meagraph benchmark`.
+  - First real edges in DIV142: 78→87 and 32→14 (the latter replicated in the associative file).
+- **Next is Phase 5:** more methods, namely GLM, stimulus-evoked, CFP, and possibly Elephant's TSPE (`elephant.functional_connectivity.total_spiking_probability_edges`).
+- Decisions D1–D17 are Accepted. D18 (excluding 200 ms after each pulse) is Proposed.
 - **Retiring the legacy scripts** (`spikes.py`, `visualize.py`) awaits owner approval. The regression test passes and `meagraph view` replaces the viewer.
 
 ## Hardware and data
@@ -52,6 +58,10 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **SpikeInterface** `get_channel_locations()` defaults to 2D `xy`, and SI's sparsity and neighbour code uses that default. Always pass `axes="xyz"` (D3).
 - `stim_connectivity.py` cannot run on real files: it expects `[src N]` event labels that MCS does not write.
 - MCS segment streams can contain events from before the saved analog data starts. `read_mcs_spikes` drops them with a warning.
+- **Elephant 1.2.1 bugs (D13).** `jitter_spikes` shifts spikes by 3 × `t_start` when `t_start` ≠ 0, and it uses global RNG. STTC's `np.isclose` widens dt by 10⁻⁵·t. meagraph has its own versions. Use Elephant's STTC only as a reference for t < 0.5 s.
+- **SpikeInterface `compute_correlograms(sorting)`:** `ccg[a, b]` counts t_a − t_b. `meagraph.connectivity.cross_correlograms` transposes it to (source, target).
+- **Monte-Carlo p-values** cannot go below 1/(N+1). Benjamini–Hochberg over many pairs then finds nothing, so use the fitted-tail p (D17).
+- **Pairwise false positives in the simulations are indirect** (chains and common input). Benchmark rows report this as `fp_indirect`.
 - **SpikeInterface 0.105 probe handling:** `set_probe` is in-place only and requires one contact per channel. To drop unmapped channels such as the reference, use `select_channels_with_probe`; `attach_probe` already does this.
 
 ## Existing code
@@ -103,6 +113,8 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q10.** Connectivity significance defaults.
 - **Q14.** Which electrodes did STG 1 and STG 2 drive in the DIV142 associative file? They cannot be inferred from the data.
 - **Q15.** In stim47, positive QC events are elevated on several channels. Are slow artifact components outlasting the 50 ms QC exclusion? Check in Phase 6.
+- **Q16.** The synaptic window is [1, 4) ms (D14). In DIV142, the 32→14 correlogram peaks at about 6 ms. Should a wider window be used, or a sensitivity analysis run?
+- **Q17.** Accept D18 (exclude spikes up to 200 ms after each pulse in spontaneous connectivity)? And, depending on the benchmark, use the burst-removed analysis as the primary one rather than "robust"?
 
 Resolved 2026-10-03:
 

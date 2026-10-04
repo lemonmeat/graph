@@ -10,7 +10,8 @@ Read alongside `DATA_FORMAT.md` (what the files contain), `EXISTING_CODE.md` (wh
 | 1 | done |
 | 2 | done |
 | 3 | done |
-| 4 | next |
+| 4 | done |
+| 5 | next |
 
 Also resolved:
 
@@ -18,7 +19,12 @@ Also resolved:
 - **Q8, Q9:** defaults approved; see D10.
 - **Viewer:** custom matplotlib inside the package (D12).
 
-New open questions: Q14 (sites in the associative file) and Q15 (stim47 QC).
+New open questions:
+
+- **Q14:** sites in the associative file.
+- **Q15:** stim47 QC.
+- **Q16:** synaptic window width.
+- **Q17:** D18 and the primary burst control.
 
 Q11–Q13 are resolved: the package is `meagraph`, the existing `.venv` is used, and the legacy scripts are frozen. Q1–Q3 are deferred, with placeholder geometry flagged (D8).
 

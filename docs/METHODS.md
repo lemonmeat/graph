@@ -55,11 +55,83 @@ These recovery times set the shortest response latency that can be measured on e
 
 **Why events.** A spike's positive overshoot can itself cross threshold; grouping counts each spike once, as negative. A symmetric noise burst is equally likely to count as positive or negative, so the binomial null still holds. Synthetic tests confirm both properties.
 
-## Connectivity inference
+## Network bursts (`meagraph.detect.bursts`)
 
-To be added in Phases 4–5: methods, assumptions and validation on synthetic ground truth.
+**Detection.** Network bursts were detected with the ISI_N method (Bakkum et al., 2013). Spikes from all channels were pooled, and any 10 consecutive pooled spikes falling within 100 ms were assigned to a burst. Overlapping runs were merged, and bursts with fewer than 3 participating channels were discarded.
+
+**Use.** Bursts served as a control: every connectivity analysis was repeated with burst periods removed.
+
+## Connectivity inference (`meagraph.connectivity`)
+
+### Scope
+
+**Recordings.** Connectivity was estimated from spontaneous activity among QC-active electrodes with at least 100 spikes. In stimulation recordings, spikes from 1 ms before each pulse to 200 ms after its offset were excluded first, because shared, stimulus-locked drive makes unconnected units co-fire.
+
+**What an edge means.** Each electrode's spikes are treated as one train. An edge means that spikes on one electrode change the probability of spikes on another at a short, consistent delay. That is **functional** connectivity: evidence for, not proof of, a synapse.
+
+**Three things it cannot separate.** Simulations (Validation) show that pairwise methods also report:
+
+- two-step chains (i → k → j);
+- common input (k → i and k → j);
+- for very short delays, possibly the same neuron recorded on two nearby electrodes.
+
+### Cross-correlograms
+
+For each ordered pair (source i, target j), the cross-correlogram counts target spikes at each lag after source spikes, in 0.5 ms bins from −30 to +30 ms. It was computed with SpikeInterface (Buccino et al., 2020).
+
+**Synaptic window.** A putative excitatory connection appears as excess target spikes 1–4 ms after source spikes.
+
+**Weight and delay.** The weight is the spike transmission probability: excess target spikes in the window per source spike (English et al., 2017). The delay is the lag of the largest excess.
+
+**Two tests of the excess:**
+
+- **Smoothed-baseline test** (`cch_hollow`; Stark & Abeles, 2009; English et al., 2017).
+  1. Estimate the expected correlogram by convolving it with a partially hollow Gaussian (σ = 10 ms, centre weight × 0.4), which follows slow co-modulation without absorbing a sharp synaptic peak.
+  2. Test each window bin against a Poisson distribution with that expectation.
+  3. Bonferroni-correct the smallest p within the window.
+- **Jitter test** (`cch_jitter`; Amarasingham et al., 2012).
+  1. Redraw every spike of both trains uniformly within the fixed 10 ms window that contains it, 1000 times. This interval jitter preserves each train's spike count in every 10 ms window, and therefore all co-firing slower than about 10 ms, such as bursts and rate co-modulation.
+  2. Destroy the fine timing that a synapse would create.
+  3. Fit a negative binomial (or Poisson) distribution to the 1000 surrogate window counts by moments, and take the p-value from its tail. This avoids the 1/1001 resolution limit of a pure Monte-Carlo test, which would otherwise prevent discoveries when many pairs are tested.
+
+### Spike time tiling coefficient
+
+The STTC (Cutts & Eglen, 2014) is an undirected measure of co-firing within ±Δt that does not depend on firing rate. It was computed with Δt = 5 ms. Significance came from the same interval-jitter surrogates, with a normal distribution fitted to the surrogate values. STTC with Δt = 50 ms was reported as a descriptive measure of burst-scale co-firing.
+
+### Multiple comparisons and burst control
+
+**Multiple comparisons.** p-values were corrected with the Benjamini–Hochberg procedure (Benjamini & Hochberg, 1995) at a false discovery rate of 5 %:
+
+- correlogram methods: across all tested ordered pairs;
+- STTC: across unordered pairs.
+
+**Burst control.** Each method was run on all spikes and again with network-burst periods removed. Edges significant in both analyses are reported as robust.
+
+### Validation on synthetic networks (`meagraph.synth`, `meagraph.benchmark`)
+
+**Model.** The methods were validated on simulated networks with known directed connections: a linear Hawkes process simulated as a branching process.
+
+- Each spike of unit i adds on average W_ij spikes to unit j after a 1.5–3.5 ms delay.
+- Units had baseline rates of 0.2–2 Hz and sat on the electrode positions of the array.
+- Optional confounds were network bursts matched to the DIV142 recording, periodic stimulation, and detection errors.
+
+**Scoring.** For each method, recording length and connection strength, the scores were:
+
+- precision, recall and false-positive rate against the true connections;
+- ROC area, computed from the p-values;
+- delay error.
+
+**Results:** pending. The full benchmark (27 scenarios × 3 seeds) was still running when this section was written; its tables will be added here.
 
 ## References
+
+- Amarasingham, A., Harrison, M. T., Hatsopoulos, N. G., & Geman, S. (2012). Conditional modeling and the jitter method of spike resampling. *Journal of Neurophysiology*, 107(2), 517–531.
+- Bakkum, D. J., Radivojevic, M., Frey, U., Franke, F., Hierlemann, A., & Takahashi, H. (2013). Parameters for burst detection. *Frontiers in Computational Neuroscience*, 7, 193.
+- Benjamini, Y., & Hochberg, Y. (1995). Controlling the false discovery rate: a practical and powerful approach to multiple testing. *Journal of the Royal Statistical Society B*, 57(1), 289–300.
+- Cutts, C. S., & Eglen, S. J. (2014). Detecting pairwise correlations in spike trains: an objective comparison of methods and application to the study of retinal waves. *Journal of Neuroscience*, 34(43), 14288–14303.
+- English, D. F., McKenzie, S., Evans, T., Kim, K., Yoon, E., & Buzsáki, G. (2017). Pyramidal cell-interneuron circuit architecture and dynamics in hippocampal networks. *Neuron*, 96(2), 505–520.
+- Hawkes, A. G. (1971). Spectra of some self-exciting and mutually exciting point processes. *Biometrika*, 58(1), 83–90.
+- Stark, E., & Abeles, M. (2009). Unbiased estimation of precise temporal correlations between spike trains. *Journal of Neuroscience Methods*, 179(1), 90–100.
 
 - Buccino, A. P., Hurwitz, C. L., Garcia, S., Magland, J., Siegle, J. H., Hurwitz, R., & Hennig, M. H. (2020). SpikeInterface, a unified framework for spike sorting. *eLife*, 9, e61834.
 - Garcia, S., Sprenger, J., Holtzman, T., & Buccino, A. P. (2022). ProbeInterface: a unified framework for probe handling in extracellular electrophysiology. *Frontiers in Neuroinformatics*, 16, 823056.

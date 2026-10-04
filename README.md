@@ -2,7 +2,7 @@
 
 Analysis of Multi Channel Systems (MCS) HDF5 recordings from neuronal cultures on a custom 4×4×4 3D microelectrode array; standard 60-electrode planar MEAs also work.
 
-The current version reads recordings, audits stimulation, detects spikes with a signal-quality check, and shows everything in an interactive viewer. Connectivity graphs, stimulation analyses and closed-loop interfaces come next (`docs/PLAN.md`).
+The current version reads recordings, audits stimulation, and detects spikes with a signal-quality check. It infers connectivity graphs, with methods validated on simulated networks of known connections, and shows everything in an interactive viewer. Stimulation analyses and closed-loop interfaces come next (`docs/PLAN.md`).
 
 ## Install
 
@@ -23,7 +23,9 @@ Quote file names that contain spaces.
 meagraph info recording.h5          # what is in the file: streams, stimulation events, MCS spike streams
 meagraph audit recording.h5         # stimulation: pulse structure, stimulated site, artifact recovery per channel
 meagraph detect recording.h5 --stim-site 47     # spikes + signal-quality check, saved under results/
+meagraph graph recording.h5         # connectivity among signal-quality-checked electrodes (needs `detect` first)
 meagraph view recording.h5          # interactive viewer (click electrodes in the 3D map)
+meagraph benchmark                  # score the connectivity methods on simulated networks (about 30 min; --quick: 5 s)
 ```
 
 - `--stim-site` names the electrode that was stimulated, because MCS files do not record it. With two stimulator outputs, use `--stim-site "STG 1=47" --stim-site "STG 2=82"`.
@@ -33,6 +35,17 @@ meagraph view recording.h5          # interactive viewer (click electrodes in th
   - `config.yaml`: every parameter;
   - `provenance.json`: code version and input file.
 - `meagraph detect --profile legacy` reproduces the old `spikes.py`.
+- `meagraph graph` writes `results/<recording>/graph_<method>/` with three versions of each graph:
+  - `all/`: all spikes;
+  - `no_bursts/`: network-burst periods removed;
+  - `robust/`: edges significant in both.
+
+  Each holds `graph.graphml` and `graph.json` (nodes with 3D positions), `edges.csv` (every tested pair) and `matrices.npz`. The methods are:
+  - `cch_jitter`: cross-correlogram tested against spike-time jitter;
+  - `cch_hollow`: cross-correlogram against a smoothed baseline;
+  - `sttc`: spike time tiling coefficient, undirected.
+
+  In stimulation recordings, spikes from each pulse to 200 ms after it are left out (`--exclude-stim-ms`). See `docs/METHODS.md` for what an edge means, and what it does not.
 
 **Viewer controls.** Click an electrode in the 3D map, or a row in the raster, to select it. Click the raster to jump in time. The ←/→ keys step through time. Use the sliders for start and window length, and the radio buttons to switch between raw and filtered streams. `meagraph view file.h5 --save view.png` renders an image instead of opening a window.
 
@@ -47,6 +60,10 @@ rec = session.recording                          # lazy SpikeInterface recording
 result = detect_spikes(rec, session.stim)        # see meagraph.detect.DetectionConfig for every parameter
 result.trains.as_dict()                          # {electrode: spike times in s}
 result.active_channels                           # electrodes that pass the signal-quality check
+
+from meagraph.connectivity import estimate
+graph = estimate(result.trains.select(list(result.active_channels)), "cch_jitter")
+graph.edges()                                    # significant edges: source, target, weight, delay, p
 ```
 
 ## Things to know

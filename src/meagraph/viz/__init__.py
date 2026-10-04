@@ -139,4 +139,25 @@ def plot_waveforms(waveforms_uv: np.ndarray, cutout_ms: tuple[float, float], *, 
     return ax
 
 
-__all__ = ["ACCENT", "GRID", "INK", "MUTED", "STIM_COLORS", "WARM", "plot_cube_map", "plot_raster", "plot_trace", "plot_waveforms"]
+def plot_ccg(counts: np.ndarray, lag_edges_ms: np.ndarray, *, window_ms: tuple[float, float] | None = None,
+             baseline: np.ndarray | None = None, ax=None):  # fmt: skip
+    """A cross-correlogram (target spikes at each lag after source spikes), with the synaptic
+    window shaded and an optional baseline curve."""
+    ax = _ax(ax)
+    centres = (lag_edges_ms[:-1] + lag_edges_ms[1:]) / 2
+    ax.bar(centres, counts, width=np.diff(lag_edges_ms), color=INK, linewidth=0)
+    if baseline is not None:
+        ax.plot(centres, baseline, color=WARM, linewidth=1.2)
+    if window_ms is not None:
+        ax.axvspan(*window_ms, color=ACCENT, alpha=0.15, zorder=0)
+    ax.axvline(0, color=MUTED, linewidth=0.6)
+    ax.set_xlabel("lag (ms), target after source")
+    ax.set_ylabel("count")
+    _clean(ax)
+    return ax
+
+
+__all__ = [
+    "ACCENT", "GRID", "INK", "MUTED", "STIM_COLORS", "WARM",
+    "plot_ccg", "plot_cube_map", "plot_raster", "plot_trace", "plot_waveforms",
+]  # fmt: skip

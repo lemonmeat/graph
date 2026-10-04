@@ -279,3 +279,152 @@ The SI rule is the stricter one. It is used for all profiles.
 - analog streams are listed in processing order;
 - QC-active electrodes have a dark rim;
 - spikes come from `meagraph detect` results, falling back to a legacy sidecar.
+
+---
+
+## D13. Phase 4 library survey: what is reused, what is custom
+
+**Status:** Accepted 2026-10-04
+
+Surveyed in SpikeInterface 0.105.0 and Elephant 1.2.1 before writing any connectivity code.
+
+**Reused:**
+
+- **SpikeInterface `postprocessing.compute_correlograms`** for all cross-correlograms. It takes about 0.01 s for 59 units without numba.
+  - *Sign convention:* `ccg[A, B]` peaks at −2 ms when B fires 2 ms after A. `meagraph.connectivity.cross_correlograms` therefore returns `ccg_si.transpose(1, 0, 2)`, so that `ccg[i, j]` at +lag counts spikes of j that occur `lag` after spikes of i.
+  - *Bins:* half-open, `[lo, hi)`, which matches `window_counts`. A test pins both properties.
+- **SciPy `stats.false_discovery_control`** for Benjamini–Hochberg correction.
+- **NetworkX** for graphs.
+- **Elephant `spike_time_tiling_coefficient`** as the reference implementation in tests.
+- **Elephant `functional_connectivity.total_spiking_probability_edges`** (TSPE, an MEA-specific method) is a Phase 5 candidate.
+
+**Not available in either library:**
+
+- connectivity inference beyond pairwise correlograms;
+- network-burst detection (SpikeInterface lists burst metrics as a TODO; Elephant's synchrony tools address a different question);
+- networks with known directed connections for validation (SpikeInterface's generators produce independent Poisson units only).
+
+These are written in `meagraph`.
+
+**Custom replacements, and why:**
+
+- **Interval jitter.** Elephant's `jitter_spikes` defines the right surrogate (spikes redrawn uniformly within fixed windows anchored at `t_start`), but in 1.2.1 it has two problems:
+  1. It **shifts every spike by 3 × `t_start`** when `t_start ≠ 0`. Tested: with `t_start` = 0.5 s, surrogates moved by +1.5 s. Our beforestim recording starts at 0.5 s.
+  2. It draws from NumPy's **global** random state.
+
+  `meagraph.connectivity.interval_jitter` implements the same definition with a local, seeded generator. This is worth reporting upstream.
+- **STTC.** Elephant's implementation has two problems:
+  1. **Speed.** 3.6 ms per pair. Surrogate testing at 1000 surrogates would take 3 minutes for the 8 active electrodes and about 3.4 hours for all 59.
+  2. **A tolerance bug.** It tests coincidence with `np.isclose(a, b, atol=dt)`, whose default *relative* tolerance makes the effective window dt + 10⁻⁵·t. That is 0.2 ms wider at t = 20 s and 19 ms wider at t = 1920 s. Tested: at t = 1000 s with dt = 5 ms, it scores two spikes 5.1 ms apart as perfectly coincident (STTC = 1.0).
+
+  `meagraph.connectivity.stats.sttc` is vectorized and uses the exact definition (|a − b| ≤ dt). It matches a brute-force implementation exactly, and matches Elephant to 1e-16 where Elephant's relative term is negligible (t < 0.5 s). Both checks are tests.
+
+---
+
+## D14. Connectivity significance defaults (Q10)
+
+**Status:** Accepted 2026-10-04 (owner approved the proposal)
+
+| Setting | Value |
+|---|---|
+| Correlogram bins | 0.5 ms |
+| Correlogram lags | ±30 ms |
+| Synaptic window | [1, 4) ms after the source spike |
+| Hollow-Gaussian baseline | σ = 10 ms, centre weight scaled by 0.4 |
+| Jitter surrogates | 1000, interval jitter with **10 ms windows** |
+| Multiple comparisons | Benjamini–Hochberg, q = 0.05, across all tested ordered pairs of one recording and method |
+| Minimum spikes per electrode | 100 |
+| STTC | Δt = 5 ms tested; Δt = 50 ms reported as a descriptive burst-scale value |
+| Electrodes | QC-active only |
+
+**About the jitter window.** The approved "±5 ms interval jitter" is implemented as interval jitter with 10 ms windows: each spike is redrawn uniformly within the fixed 10 ms window that contains it, i.e. within ±5 ms of the window centre. Co-firing slower than about 10 ms (bursts, rate co-modulation) is preserved, so the test asks only about fine timing.
+
+**Network bursts.** Each graph is computed with all spikes and again with network-burst periods removed. Edges significant in both are marked **robust**.
+
+---
+
+## D15. Network-burst detection
+
+**Status:** Accepted 2026-10-04 (`meagraph.detect.bursts`)
+
+**Method.** ISI_N (Bakkum et al. 2013):
+
+1. Pool all non-excluded channels.
+2. Wherever 10 consecutive pooled spikes fall within 100 ms, those spikes belong to a burst.
+3. Overlapping runs merge.
+4. Keep bursts in which at least 3 channels take part.
+
+**No merge step.** In the DIV142 spontaneous recording, gaps between bursts spread evenly from 0.1 s to 10 s with no natural cutoff, so no merge parameter is used.
+
+**Observed:**
+
+| Recording | Bursts | Median duration | Spikes inside bursts |
+|---|---|---|---|
+| DIV142 spontaneous (600 s) | 143 | 98 ms | 57 % |
+| DIV142 associative | 607 | — | — |
+
+In the associative file, 283 of the 606 gaps fall between 3 and 5 s. These bursts are stimulus-evoked and locked to the 5 s train period; excluding post-stimulus periods (D18) halves the count.
+
+**Use.** Bursts are used as a control (the analysis is repeated without burst periods), not as an outcome measure. The parameters are therefore not tuned further.
+
+---
+
+## D16. Synthetic ground truth: a linear Hawkes network
+
+**Status:** Accepted 2026-10-04 (owner chose the simple model; `meagraph.synth`)
+
+**Model.** Plain NumPy, simulated exactly as a branching process. Each spike of unit i causes, on average, `W[i, j]` extra spikes in unit j after a delay of 1.5–3.5 ms with 0.25 ms jitter. `W` is the spike transmission probability, the quantity the correlogram estimators measure. Units sit on randomly chosen contacts of the probe, with baseline rates log-uniform between 0.2 and 2 Hz.
+
+**Confounds, each optional:**
+
+- **Network bursts:** shared rate surges. The defaults follow DIV142: 0.24 bursts/s, 100 ms long, ×20 gain, 80 % participation.
+- **Periodic stimulation:** shared, time-locked responses.
+- **Detection errors:** missed and false spikes, plus a 1 ms dead time.
+
+**Not used.** Brian2 and neuron-model simulators are not used. They can be added if this model proves too idealised.
+
+**Known simplifications:**
+
+- linear interactions, so no inhibition or saturation;
+- delays always fall inside the default synaptic window;
+- no biophysical bursting.
+
+---
+
+## D17. Jitter p-values come from a distribution fitted to the surrogates
+
+**Status:** Accepted 2026-10-04 (fixes a power failure found by `tests/test_connectivity.py`)
+
+**The failure.** A Monte-Carlo p-value can never be below 1/(N+1). Benjamini–Hochberg over m pairs needs p ≤ q·k/m for k discoveries, so with N = 1000:
+
+- an edge is discoverable only if about m/50 edges reach the floor;
+- with 59 electrodes (3,422 pairs), roughly 70 would have to;
+- with 200 surrogates and 132 pairs, nothing can ever be significant.
+
+A sparse synthetic network gave 0 of 12 true edges.
+
+**The fix.** The 1000 interval-jitter surrogates (D14) are kept, but each p-value comes from a distribution moment-matched to them:
+
+- **Correlogram window counts:** negative binomial when overdispersed (as bursts make them), otherwise Poisson. The mean gets +0.5/N so that all-zero surrogates still give a finite p.
+- **STTC:** normal.
+
+The Monte-Carlo p-value is stored alongside as `extra["p_empirical"]`.
+
+**Calibration on null networks** (16 units, 3 seeds, 10 min; fraction of p < 0.05 and p < 0.01):
+
+| Method | Without bursts | With bursts |
+|---|---|---|
+| `cch_jitter` | 1.3 % / 0.1 % | 2.4 % / 0.3 % |
+| `sttc` | 5.3 % / 1.4 % | 6.7 % / 1.7 % |
+
+`cch_jitter` is conservative. STTC is near nominal and slightly liberal under bursts, which BH absorbs. In the range Monte Carlo resolves, fitted and empirical p agree to 0.01–0.06 (median absolute difference).
+
+---
+
+## D18. Stimulation periods are excluded from spontaneous connectivity
+
+**Status:** Proposed 2026-10-04 (default `--exclude-stim-ms 200`; awaiting owner review)
+
+**Why.** Shared stimulus drive makes unconnected units co-fire. In the "stim null" benchmark scenario, STTC called 32 % of unconnected pairs connected.
+
+**Default.** `meagraph graph` drops spikes from 1 ms before each pulse to 200 ms after its offset whenever the recording has stimulation events. 200 ms covers the stimulus-evoked network bursts seen in the associative file, but the value is provisional. Evoked responses themselves are the subject of the Phase 5 stimulus-triggered estimator.

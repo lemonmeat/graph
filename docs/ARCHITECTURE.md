@@ -10,7 +10,7 @@ This is a working draft that grows with each phase; Phase 7 finalises it. The ro
 - **Electrode identity:** the electrode label string (`"47"`), with probe coordinates attached.
 - **Geometry and parameters are data** (probe YAML + CSV, config YAML). Outputs record their config and provenance.
 
-## Data flow (implemented through Phase 3)
+## Data flow (implemented through Phase 4)
 
 ```
 recording.h5 ──► io.load_session ──► Session
@@ -28,9 +28,16 @@ recording.h5 ──► io.load_session ──► Session
        detect.save_detection ──► results/<recording>/detect_<profile>/ (npz, csv, config, provenance)
                    ▼
        viewer (meagraph view) ◄── load_detection, or a legacy *.spikes.h5 sidecar
+                   ▼
+       connectivity.graphs_from_detection: active channels, minus stimulation periods (D18)
+                   │   detect.network_bursts (all channels) → burst_controlled: all / no_bursts / robust
+                   ▼
+       estimate(trains, "cch_jitter" | "cch_hollow" | "sttc") → ConnectivityResult → save_result (GraphML, JSON, CSV)
+
+synth.simulate_network (known W, delays, confounds) → benchmark.run_benchmark → score per method and spike set
 ```
 
-Later phases consume `SpikeTrains`, `DetectionResult.active_channels` and `Session.stim`.
+Later phases consume `ConnectivityResult`, `SpikeTrains`, `DetectionResult.active_channels` and `Session.stim`.
 
 ## Modules
 
@@ -46,7 +53,10 @@ Later phases consume `SpikeTrains`, `DetectionResult.active_channels` and `Sessi
 | `viz` | done | `plot_cube_map`, `plot_raster`, `plot_trace`, `plot_waveforms` (matplotlib, no I/O) |
 | `viewer` | done | interactive viewer (D12), `meagraph view`; never imported by the core |
 | `cli` | done | `info`, `probes`, `audit`, `detect`, `view` |
-| `connectivity`, `synth`, `benchmark` | Phases 4–5 | |
+| `connectivity` | Phase 4 done (Phase 5 adds more methods) | `ConnectivityResult`, estimator registry, `cch_hollow`, `cch_jitter`, `sttc`, surrogates and fitted p (D17), FDR, burst control, graph I/O |
+| `detect.bursts` | done | ISI_N network bursts (D15), period removal |
+| `synth` | done | linear Hawkes network with known connections and optional confounds (D16) |
+| `benchmark` | done | scenarios, scoring (including indirect false positives), sweep runner |
 | `reservoir`, `realtime` | Phase 7 | |
 
 ## Extension points
@@ -65,7 +75,15 @@ A spec can also live outside the package; pass its YAML path instead of a name.
 
 **A figure.** Add a function to `meagraph.viz` that takes data and an optional `ax` and returns artists. The viewer and notebooks can then share it.
 
-**Connectivity estimators, encoders and decoders** get their interfaces in Phases 4 and 7.
+**A connectivity estimator.** Add one class to `meagraph/connectivity/`. It needs:
+
+- `name`;
+- a pydantic `Config`;
+- `estimate(trains, config) -> ConnectivityResult`, with matrices as (source row, target column) and NaN for untested pairs.
+
+Decorate it with `@register` and import it in `connectivity/__init__.py`. It then works with `estimate(...)`, `meagraph graph --method` and the benchmark without further changes.
+
+**Encoders and decoders** get their interfaces in Phase 7.
 
 ## Testing
 
