@@ -2,10 +2,10 @@ import numpy as np
 import pytest
 from spikeinterface.core import NumpyRecording
 
-from meagraph.detect import DetectionConfig, detect_spikes, load_detection, median_abs_noise_uv, save_detection
+from meagraph.detect import detect_spikes, load_detection, median_abs_noise_uv, save_detection
 from meagraph.io.mcs_events import StimEvents
 from meagraph.preprocess import InterpolateWindowsRecording, detection_band, merge_windows
-from meagraph.stimulation import fixed_windows, group_trains, infer_site, measure_recovery
+from meagraph.stimulation import group_trains, infer_site, measure_recovery
 from synthetic import FS, make_recording, match_fraction
 
 
@@ -59,7 +59,7 @@ def test_noise_matches_exact_median():
 # -- detection --------------------------------------------------------------------------- #
 def test_detects_known_spikes_and_flags_active_channel():
     rec, truth, _ = make_recording(duration_s=20.0, spike_rate_hz=5.0)
-    res = detect_spikes(rec, config="default")
+    res = detect_spikes(rec)
     found = np.round(res.trains.as_dict()["0"] * FS).astype(np.int64)
     assert match_fraction(found, truth) >= 0.97
     assert match_fraction(truth, found) >= 0.97  # few false positives on the spiking channel
@@ -93,29 +93,15 @@ def test_stimulation_is_blanked_site_excluded_and_recovery_measured():
     rec_ms = measure_recovery(rec, stim)
     assert np.all(rec_ms.recovery_ms > 1.0) and np.all(rec_ms.recovery_ms < rec_ms.max_post_ms)
 
-    for blanking in ("fixed", "adaptive"):
-        res = detect_spikes(rec, [stim], DetectionConfig(blanking=blanking))
-        t = res.trains.as_dict()
-        # no detection inside any pulse (+ 2 ms) on any channel
-        for spikes in t.values():
-            d = spikes[:, None] - onsets[None, :]
-            assert not np.any((d >= -1e-3) & (d < 4e-3)), blanking
-        assert match_fraction(np.round(t["0"] * FS).astype(np.int64), truth) >= 0.95, blanking
-        assert t["2"].size == 0 and res.excluded == {"2": "stimulation site (STG 1)"}
-        assert res.trains.n_spikes()[1] <= 2  # the artifact did not leak into noise-only channels
-
-
-def test_legacy_profile_keeps_stim_site():
-    rec, _, stim = make_recording(duration_s=5.0, stim_onsets_s=[1.0, 2.0, 3.0])
-    res = detect_spikes(rec, [stim.with_site("2")], "legacy")
-    assert res.excluded == {} and res.config.blanking == "fixed"
-
-
-def test_fixed_windows_follow_the_legacy_rule():
-    rec, _, stim = make_recording(duration_s=2.0, stim_onsets_s=[0.5, 1.0])
-    w = fixed_windows(rec, [stim], pre_ms=1.0, post_ms=6.0)
-    # Start and Stop windows overlap and merge: [onset - 1 ms, stop + 6 ms)
-    np.testing.assert_array_equal(w, [[4990, 5080], [9990, 10080]])
+    res = detect_spikes(rec, [stim])
+    t = res.trains.as_dict()
+    # no detection inside any pulse (+ 2 ms) on any channel
+    for spikes in t.values():
+        d = spikes[:, None] - onsets[None, :]
+        assert not np.any((d >= -1e-3) & (d < 4e-3))
+    assert match_fraction(np.round(t["0"] * FS).astype(np.int64), truth) >= 0.95
+    assert t["2"].size == 0 and res.excluded == {"2": "stimulation site (STG 1)"}
+    assert res.trains.n_spikes()[1] <= 2  # the artifact did not leak into noise-only channels
 
 
 def test_detection_result_roundtrip(tmp_path):

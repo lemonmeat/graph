@@ -3,7 +3,6 @@
 from meagraph.stimulation.artifacts import (
     Recovery,
     SiteInference,
-    fixed_windows,
     infer_site,
     measure_recovery,
     pulse_windows,
@@ -16,7 +15,6 @@ __all__ = [
     "SiteInference",
     "StimAudit",
     "audit_stimulation",
-    "fixed_windows",
     "format_audit",
     "group_trains",
     "infer_site",

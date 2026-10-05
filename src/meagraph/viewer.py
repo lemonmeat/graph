@@ -15,7 +15,7 @@ import numpy as np
 
 from meagraph import viz
 from meagraph.detect.store import find_detection, load_detection
-from meagraph.io import McsH5Recording, Session, load_session, read_spikes_sidecar, sidecar_path
+from meagraph.io import McsH5Recording, Session, load_session
 from meagraph.probe import DEFAULT_PROBE
 
 
@@ -58,7 +58,7 @@ class ViewerData:
 
 
 def load_viewer_data(path, probe=DEFAULT_PROBE, stim_site=None, spikes_dir=None) -> ViewerData:
-    """Spikes come from ``spikes_dir``, else the newest ``meagraph detect`` result, else a legacy sidecar."""
+    """Spikes come from ``spikes_dir``, else the recording's ``meagraph detect`` result."""
     session = load_session(path, probe=probe, stim_site=stim_site)
     rec = session.recording
     electrodes = tuple(str(c) for c in rec.channel_ids)
@@ -68,13 +68,8 @@ def load_viewer_data(path, probe=DEFAULT_PROBE, stim_site=None, spikes_dir=None)
     if folder is not None:
         det = load_detection(folder)
         spikes, waveforms, cutout = det.trains.as_dict(), det.waveforms_uv, det.config.cutout_ms
-        source = f"meagraph detect ({det.config.profile}, {det.config.threshold_sigma:g} sigma)"
+        source = f"meagraph detect ({det.config.threshold_sigma:g} sigma)"
         active = frozenset(det.active_channels)
-    elif sidecar_path(path).exists():
-        legacy = read_spikes_sidecar(sidecar_path(path))
-        spikes = legacy.trains.as_dict()
-        waveforms = {e: w.T for e, w in legacy.waveforms_uv.items()}
-        cutout, source = legacy.cutout_ms, f"legacy spikes.py ({legacy.params['k']:g} sigma)"
     streams = tuple(s.short_label for s in session.inventory.analog_streams)
     return ViewerData(session, electrodes, grid, spikes, waveforms, cutout, source, active, streams)
 

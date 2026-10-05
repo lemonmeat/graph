@@ -122,7 +122,7 @@ This entry must be re-checked whenever the SI version changes.
 
 **Retired 2026-10-05.** With the regression test passing, the owner approved removing `mcs.py`, `spikes.py`, `visualize.py`, `spontaneous_ccg.py` and `stim_audit.py` (recoverable from commit `f3045f7`). `stim_connectivity.py` stays until the Phase 5 port. The regression test does not need the scripts: it compares against the committed baseline.
 
-**Regression baseline.** The baseline is a committed copy in `tests/data/legacy_baseline/`. It holds the three sidecars written 2026-09-30, after the last edit to `spikes.py`, plus a `SHA256SUMS` file. A test fails if the copy changes.
+**Regression baseline** (removed 2026-10-05, D21; recoverable from git history). The baseline was a committed copy in `tests/data/legacy_baseline/`. It holds the three sidecars written 2026-09-30, after the last edit to `spikes.py`, plus a `SHA256SUMS` file. A test fails if the copy changes.
 
 ---
 
@@ -184,7 +184,7 @@ The detection parameters are the `spikes.py` settings:
 
 Connectivity analyses (Phase 4 onward) use only channels flagged **active** by the polarity control below. Spikes are still reported for every channel.
 
-### Blanking (Q9, profile `default`)
+### Blanking (Q9)
 
 For each STG output, `measure_recovery` works as follows:
 
@@ -198,7 +198,7 @@ Each channel is then blanked over `[onset − 1 ms, offset + recovery)`:
 - **Guard:** peaks less than 1 ms after a window are dropped, as in legacy.
 - **Stimulation sites:** sites given in the config or `--stim-site` are excluded from detection entirely.
 
-The `legacy` profile keeps the old fixed rule: −1/+6 ms around every Start and Stop event, with no site exclusion. It exists for the regression test.
+The old fixed rule (−1/+6 ms around every Start and Stop event, no site exclusion) was kept as a `legacy` profile for the regression test until 2026-10-05 (D21).
 
 **Measured recovery after pulse offset:**
 
@@ -230,7 +230,7 @@ With events, a spike counts as negative because its trough outweighs its oversho
 
 ## D11. Regression tolerances against `spikes.py`
 
-**Status:** Accepted 2026-10-03 (`tests/test_regression.py`)
+**Status:** Superseded 2026-10-05 by D21. The test passed on all three baseline files until it was retired.
 
 **Tolerances.** The `legacy` profile must reproduce the committed baseline as follows:
 
@@ -280,7 +280,7 @@ The SI rule is the stricter one. It is used for all profiles.
 - the reference electrode `15` is not listed;
 - analog streams are listed in processing order;
 - QC-active electrodes have a dark rim;
-- spikes come from `meagraph detect` results, falling back to a legacy sidecar.
+- spikes come from `meagraph detect` results (the fallback to legacy sidecars was removed 2026-10-05, D21).
 
 ---
 
@@ -461,3 +461,16 @@ From the full benchmark (`docs/METHODS.md` § Validation; `docs/benchmark/benchm
 **Evidence.** Re-running detection and graphs on all five recordings gave the same spikes, QC and edges as before the change.
 
 **Cost.** Detection folders written before this change lack `stimulation.csv`. `load_detection` refuses them with a message to re-run `meagraph detect`.
+
+---
+
+## D21. Legacy detection retired; a snapshot test guards detection instead
+
+**Status:** Accepted 2026-10-05 (owner chose "everything legacy")
+
+**What was removed.** The `legacy` detection profile, with its fixed blanking and the option to keep the stimulated electrode. Also the `--profile` option, the `spikes.py` regression test and its committed baseline (`tests/data/legacy_baseline/`), the `*.spikes.h5` reader (`io/legacy.py`) and the viewer's fallback to it. Detection now has one configuration, `DetectionConfig()`. Results go to `results/<recording>/detect/`.
+
+**What the defaults are.** Unchanged: the `spikes.py` detection settings (D10, Q8) with adaptive per-channel blanking and the stimulated electrode excluded (Q9). Re-running detection on all five recordings after the change reproduced the previous default results exactly.
+
+**What replaces the regression test.** `tests/test_detection_snapshot.py` fingerprints detection on four real recordings (spike counts, a hash of every spike's sample index, noise, active and excluded channels). Any change in which spikes are found fails the test. Intended changes regenerate the snapshot (`MEAGRAPH_UPDATE_SNAPSHOT=1`) in the same commit. The parity with `spikes.py` that D11 established remains documented there and in `docs/METHODS.md`; recover the old test and baseline from git history (commit before this change) if it must be re-run.
+

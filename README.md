@@ -32,7 +32,7 @@ meagraph benchmark --n-jobs 4       # score the connectivity methods on simulate
 The full benchmark runs 81 simulated networks: about 1.5 CPU-hours, or roughly 25 minutes with `--n-jobs 4`. macOS throttles long jobs heavily when the machine idles or sleeps, so on a Mac start it as `caffeinate -i meagraph benchmark --n-jobs 4`.
 
 - `--stim-site` names the electrode that was stimulated, because MCS files do not record it. With two stimulator outputs, use `--stim-site "STG 1=47" --stim-site "STG 2=82"`.
-- `meagraph detect` writes `results/<recording>/detect_default/` next to the recording. It contains:
+- `meagraph detect` writes `results/<recording>/detect/` next to the recording. It contains:
   - `spikes.npz`: spike times, amplitudes and waveforms;
   - `channels.csv`: per-electrode position, spike rate, noise, quality check and artifact recovery;
   - `stimulation.csv`: every stimulation pulse and its site, if given;
@@ -40,7 +40,6 @@ The full benchmark runs 81 simulated networks: about 1.5 CPU-hours, or roughly 2
   - `provenance.json`: code version and input file.
 
   Later steps read only this folder, never the raw file. Folders written before 2026-10-05 lack `stimulation.csv`; re-run `meagraph detect` for them.
-- `meagraph detect --profile legacy` reproduces the old `spikes.py`.
 - `meagraph graph` writes `results/<recording>/graph_<method>/` with three versions of each graph:
   - `all/`: all spikes;
   - `no_bursts/`: network-burst periods removed;
@@ -95,7 +94,7 @@ graphs["cch_jitter"].no_bursts.edges()
 
 ```bash
 pytest                  # everything; tests marked `data` use the recordings in data/
-pytest -m "not slow"    # skip the full-pipeline regression against the old spikes.py (about 30 s)
+pytest -m "not slow"    # skip the detection snapshot on the real recordings (about 30 s)
 ```
 
 The legacy scripts were retired on 2026-10-05; `docs/EXISTING_CODE.md` says what they did and how to recover them from git. `stim_connectivity.py` stays until its Phase 5 replacement exists.

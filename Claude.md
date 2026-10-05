@@ -27,9 +27,10 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - Shared helpers: `meagraph.intervals`, `SpikeTrains.without_periods`, `StimEvents.ends_s`, `stimulation.stimulation_periods`, `probe.DEFAULT_PROBE`, `ProbeSpec.positions_xyz_um`.
   - `tests/test_architecture.py` guards the layering (no matplotlib in the core; estimators independent of io/detect).
   - Pending owner OK (file deletions were blocked): turn `benchmark/` and `viz/` packages into single modules, delete the empty `realtime/` and `reservoir/` stubs, move `SessionConfig` from `config/models.py` into `io/session.py`.
+- **Legacy detection removed** (2026-10-05, D21): no profiles, no `spikes.py` regression test or baseline, no `.spikes.h5` reader. `tests/test_detection_snapshot.py` guards detection output; results go to `results/<recording>/detect/`.
 - **`meagraph plot`** (2026-10-05) draws a saved graph in 3D with each edge's correlogram; `connectivity.pipeline.load_graph` returns a graph with the exact spikes it was tested on.
 - **Next is Phase 5:** more methods, namely GLM, stimulus-evoked, CFP, and possibly Elephant's TSPE (`elephant.functional_connectivity.total_spiking_probability_edges`).
-- Decisions D1–D17 are Accepted. D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults) and D20 (self-contained result folders) are Proposed.
+- Decisions D1–D17 and D21 are Accepted (D11 superseded by D21). D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults) and D20 (self-contained result folders) are Proposed.
 - **Legacy scripts retired** 2026-10-05 (see Existing code below).
 
 ## Hardware and data
@@ -77,8 +78,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 
 - **Legacy scripts removed 2026-10-05** (owner approved): `mcs.py`, `spikes.py`, `visualize.py`, `spontaneous_ccg.py`, `stim_audit.py`. Recover any with `git show f3045f7:<name>`. What they did, and their bugs, is in `docs/EXISTING_CODE.md`.
 - `stim_connectivity.py` remains only as the reference for the Phase 5 stimulus-evoked estimator. It cannot run (it imports the removed `mcs.py`). Delete it once that port is done.
-- The regression baseline is the committed copy of the `spikes.py` sidecars in `tests/data/legacy_baseline/`, protected by a checksum test. `spikes.py` timestamps were relative to the first sample, not the recording clock.
-- The three DIV140 `*.spikes.h5` sidecars in `data/` are kept; the viewer only falls back to them when a recording has no `meagraph detect` results.
+- The `spikes.py` regression baseline and the `.spikes.h5` reader were removed 2026-10-05 (D21). Nothing reads the three DIV140 `*.spikes.h5` files left in `data/`; `meagraph` commands skip them when a shell glob picks them up.
 
 ## Environment
 

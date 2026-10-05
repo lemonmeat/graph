@@ -27,17 +27,16 @@ _COLUMNS = ["channel_id", "x_um", "y_um", "z_um", "n_spikes", "rate_hz", "noise_
 _STIM_COLUMNS = ["source", "kind", "onset_s", "offset_s", "site"]
 
 
-def default_detection_folder(recording_path: str | Path, profile: str = "default") -> Path:
-    """``results/<recording name>/detect_<profile>`` next to the recording."""
+def default_detection_folder(recording_path: str | Path) -> Path:
+    """``results/<recording name>/detect`` next to the recording."""
     p = Path(recording_path)
-    return p.parent / "results" / p.stem / f"detect_{profile}"
+    return p.parent / "results" / p.stem / "detect"
 
 
 def find_detection(recording_path: str | Path) -> Path | None:
-    """Most recently written detection folder for a recording, if any."""
-    root = Path(recording_path).parent / "results" / Path(recording_path).stem
-    found = sorted(root.glob("detect_*/spikes.npz"), key=lambda p: p.stat().st_mtime)
-    return found[-1].parent if found else None
+    """The recording's detection folder at the default location, if it exists."""
+    folder = default_detection_folder(recording_path)
+    return folder if (folder / "spikes.npz").exists() else None
 
 
 def save_detection(result: DetectionResult, folder: str | Path, inputs: Sequence[str | Path] = (), overwrite: bool = False) -> Path:

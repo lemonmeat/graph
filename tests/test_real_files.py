@@ -8,9 +8,7 @@ from meagraph.io import (
     McsH5Recording,
     inspect_file,
     load_session,
-    read_spikes_sidecar,
     read_stim_events,
-    sidecar_path,
 )
 
 pytestmark = [pytest.mark.data, pytest.mark.filterwarnings("ignore::meagraph.probe.UnverifiedGeometryWarning")]
@@ -128,12 +126,3 @@ def test_session_on_cube(real_files):
     assert session.stim[0].site == "47"
 
 
-def test_legacy_sidecars_sit_inside_the_recording(real_files):
-    for path in real_files:
-        side = sidecar_path(path)
-        if not side.exists():
-            continue
-        legacy = read_spikes_sidecar(side)
-        rec = McsH5Recording(path)
-        assert legacy.trains.t_start_s == pytest.approx(rec.get_start_time())
-        assert legacy.trains.t_stop_s == pytest.approx(rec.get_start_time() + rec.get_total_duration())

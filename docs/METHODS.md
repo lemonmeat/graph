@@ -1,6 +1,6 @@
 # Methods
 
-This file is written so it can be adapted for the independent work report. Parameter values are the `default` profile of `meagraph` unless stated otherwise. Each method names the module that implements it. Design rationale is in `DECISIONS.md`.
+This file is written so it can be adapted for the independent work report. Parameter values are the `meagraph` defaults unless stated otherwise. Each method names the module that implements it. Design rationale is in `DECISIONS.md`.
 
 ## Recording
 

@@ -1,7 +1,6 @@
-"""Reading MCS HDF5 recordings, stimulation events, MCS spike streams and legacy outputs."""
+"""Reading MCS HDF5 recordings, stimulation events and MCS spike streams."""
 
 from meagraph.io.inventory import FileInventory, format_inventory, inspect_file
-from meagraph.io.legacy import LegacySpikes, read_spikes_sidecar, sidecar_path
 from meagraph.io.mcs_events import (
     EventEntity,
     StimEvents,
@@ -15,7 +14,6 @@ from meagraph.io.session import Session, load_session
 __all__ = [
     "EventEntity",
     "FileInventory",
-    "LegacySpikes",
     "McsH5Recording",
     "Session",
     "StimEvents",
@@ -25,7 +23,5 @@ __all__ = [
     "read_event_entities",
     "read_mcs_h5",
     "read_mcs_spikes",
-    "read_spikes_sidecar",
     "read_stim_events",
-    "sidecar_path",
 ]

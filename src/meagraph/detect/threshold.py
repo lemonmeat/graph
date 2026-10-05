@@ -1,16 +1,14 @@
 """Threshold spike detection on SpikeInterface recordings.
 
-The ``legacy`` profile reproduces ``spikes.py`` (regression-tested). The ``default`` profile
-keeps its detection settings (Q8) but blanks stimulation per channel from the measured artifact
-recovery and drops the stimulating electrode (Q9; DECISIONS.md D10).
+The detection settings are those of the retired ``spikes.py`` (Q8). Stimulation is blanked per
+channel from the measured artifact recovery, and the stimulating electrode is dropped (Q9;
+DECISIONS.md D10).
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
-
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PositiveFloat, PositiveInt
 from scipy.stats import binomtest
@@ -22,7 +20,7 @@ from meagraph.io.mcs_events import StimEvents
 from meagraph.preprocess import detection_band, merge_windows
 from meagraph.probe.build import channel_positions_um
 from meagraph.spiketrains import SpikeTrains
-from meagraph.stimulation.artifacts import Recovery, fixed_windows, measure_recovery, pulse_windows
+from meagraph.stimulation.artifacts import Recovery, measure_recovery, pulse_windows
 
 
 class DetectionConfig(BaseModel):
@@ -30,8 +28,7 @@ class DetectionConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    profile: str = "default"
-    # Detection (Q8: the legacy spikes.py settings)
+    # Detection (Q8: the spikes.py settings)
     threshold_sigma: PositiveFloat = 5.0
     band_hz: tuple[PositiveFloat, PositiveFloat] = (300.0, 3000.0)
     filter_order: PositiveInt = 3
@@ -39,15 +36,14 @@ class DetectionConfig(BaseModel):
     max_amplitude_uv: PositiveFloat = 1000.0
     cutout_ms: tuple[PositiveFloat, PositiveFloat] = (1.0, 2.0)
     reject_rebound: bool = True
-    # Stimulation (Q9)
-    blanking: Literal["fixed", "adaptive"] = "adaptive"
+    # Stimulation (Q9): blank each channel from pulse onset - blank_pre_ms until its artifact has
+    # recovered, at least recovery_min_post_ms and at most recovery_max_post_ms after pulse offset.
+    # The stimulated electrode (StimEvents.site) is excluded.
     blank_pre_ms: PositiveFloat = 1.0
-    blank_post_ms: PositiveFloat = 6.0  # fixed: after every Start and Stop event
     guard_ms: float = 1.0  # peaks this soon after a window are dropped
-    recovery_min_post_ms: PositiveFloat = 1.0  # adaptive: blank at least this long after pulse offset
-    recovery_max_post_ms: PositiveFloat = 50.0  # adaptive: and at most this long
+    recovery_min_post_ms: PositiveFloat = 1.0
+    recovery_max_post_ms: PositiveFloat = 50.0
     recovery_threshold_sigma: PositiveFloat = 1.0
-    exclude_stim_site: bool = True
     # Signal-quality control: a channel is "active" when negative peaks outnumber positive ones.
     # Counted outside stimulation and the qc_exclude_post_ms after each pulse, where evoked
     # responses and artifact residue are not spontaneous-like.
@@ -57,12 +53,6 @@ class DetectionConfig(BaseModel):
     # Execution
     n_jobs: PositiveInt = 1
     chunk_duration_s: PositiveFloat = 1.0
-
-
-PROFILES = {
-    "default": DetectionConfig(),
-    "legacy": DetectionConfig(profile="legacy", blanking="fixed", exclude_stim_site=False),
-}
 
 
 @dataclass(frozen=True, eq=False)
@@ -103,9 +93,6 @@ def _blanking(recording: BaseRecording, stim: Sequence[StimEvents], cfg: Detecti
     n = recording.get_num_samples()
     if not stim:
         return None, {}
-    if cfg.blanking == "fixed":
-        shared = fixed_windows(recording, stim, cfg.blank_pre_ms, cfg.blank_post_ms)
-        return {c: shared for c in ids}, {}
     per_channel: dict[str, list[np.ndarray]] = {c: [] for c in ids}
     recoveries: dict[str, dict[str, float]] = {}
     for s in stim:
@@ -177,14 +164,14 @@ def _cutouts(filt: BaseRecording, samples: np.ndarray, channels: np.ndarray, pre
 def detect_spikes(
     recording: BaseRecording,
     stim: Sequence[StimEvents] = (),
-    config: DetectionConfig | str = "default",
+    config: DetectionConfig | None = None,
 ) -> DetectionResult:
     """Detect negative threshold crossings on every channel.
 
     ``recording`` is a session recording (raw units, probe attached). ``stim`` gives the
     stimulation events to blank; a ``site`` on an event marks that electrode for exclusion.
     """
-    cfg = PROFILES[config] if isinstance(config, str) else config
+    cfg = config or DetectionConfig()
     fs = recording.get_sampling_frequency()
     n = recording.get_num_samples()
     ids = [str(c) for c in recording.channel_ids]
@@ -223,9 +210,7 @@ def detect_spikes(
         ok = wf.max(axis=1) < -amp
         sample, chan, amp, wf = sample[ok], chan[ok], amp[ok], wf[ok]
 
-    excluded = {}
-    if cfg.exclude_stim_site:
-        excluded = {s.site: f"stimulation site ({s.source})" for s in stim if s.site is not None}
+    excluded = {s.site: f"stimulation site ({s.source})" for s in stim if s.site is not None}
     t0 = recording.get_start_time()
     times, amps, wfs = {}, {}, {}
     for k, c in enumerate(ids):

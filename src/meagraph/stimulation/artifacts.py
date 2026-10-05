@@ -15,21 +15,11 @@ from spikeinterface.core import BaseRecording
 
 from meagraph.intervals import merge_intervals
 from meagraph.io.mcs_events import StimEvents
-from meagraph.preprocess import detection_band, merge_windows
+from meagraph.preprocess import detection_band
 
 
 def _to_samples(times_s: np.ndarray, recording: BaseRecording) -> np.ndarray:
     return (np.asarray(times_s) - recording.get_start_time()) * recording.get_sampling_frequency()
-
-
-def fixed_windows(recording: BaseRecording, stim: Sequence[StimEvents], pre_ms: float, post_ms: float) -> np.ndarray:
-    """Legacy ``spikes.py`` rule: ``[t - pre, t + post)`` around every Start and every Stop event."""
-    fs = recording.get_sampling_frequency()
-    times = [s.onsets_s for s in stim] + [s.offsets_s for s in stim if s.offsets_s is not None]
-    t = np.sort(np.concatenate(times)) if times else np.zeros(0)
-    a = np.round(_to_samples(t, recording) - pre_ms * 1e-3 * fs).astype(np.int64)
-    b = np.round(_to_samples(t, recording) + post_ms * 1e-3 * fs).astype(np.int64)
-    return merge_windows(np.column_stack([a, b]), recording.get_num_samples())
 
 
 def pulse_windows(recording: BaseRecording, stim: StimEvents, pre_ms: float, post_ms: float | np.ndarray) -> np.ndarray:

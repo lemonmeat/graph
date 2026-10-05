@@ -66,16 +66,16 @@ def _audit(args: argparse.Namespace) -> int:
 
 
 def _detect(args: argparse.Namespace) -> int:
-    from meagraph.detect import PROFILES, detect_spikes, save_detection
+    from meagraph.detect import DetectionConfig, detect_spikes, save_detection
     from meagraph.detect.store import default_detection_folder
     from meagraph.io import load_session
 
-    config = PROFILES[args.profile].model_copy(update={"n_jobs": args.n_jobs})
+    config = DetectionConfig(n_jobs=args.n_jobs)
     for path in _recordings(args.paths):
         start = time.time()
         session = load_session(path, probe=args.probe, stim_site=_stim_site(args.stim_site))
         result = detect_spikes(session.recording, session.stim, config)
-        out = Path(args.out) if args.out else default_detection_folder(path, args.profile)
+        out = Path(args.out) if args.out else default_detection_folder(path)
         save_detection(result, out, inputs=[path], overwrite=args.overwrite)
         n = result.trains.n_spikes()
         print(
@@ -84,7 +84,7 @@ def _detect(args: argparse.Namespace) -> int:
         )
         if result.excluded:
             print(f"  excluded: {result.excluded}")
-        if session.stim and all(s.site is None for s in session.stim) and config.exclude_stim_site:
+        if session.stim and all(s.site is None for s in session.stim):
             print("  note: no --stim-site given, so no stimulating electrode was excluded")
         print(f"  wrote {out}")
     return 0
@@ -211,8 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("detect", help="detect spikes and save them with QC, config and provenance")
     p.add_argument("paths", nargs="+")
     session_args(p)
-    p.add_argument("--profile", choices=["default", "legacy"], default="default")
-    p.add_argument("--out", help="output folder (default: results/<recording>/detect_<profile> next to the file)")
+    p.add_argument("--out", help="output folder (default: results/<recording>/detect next to the file)")
     p.add_argument("--n-jobs", type=int, default=1)
     p.add_argument("--overwrite", action="store_true")
     p.set_defaults(func=_detect)

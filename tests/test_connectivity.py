@@ -210,7 +210,7 @@ def test_cli_graph_on_a_detection_folder(tmp_path, capsys):
         qc=ChannelQC(ids, np.full(len(ids), 100), np.zeros(len(ids), int), np.zeros(len(ids)), np.ones(len(ids), bool)),
         stim=(StimEvents("STG 1", "Single Pulse", onsets, onsets + 0.001),),
     )  # fmt: skip
-    folder = save_detection(det, tmp_path / "results" / "rec" / "detect_default")
+    folder = save_detection(det, tmp_path / "results" / "rec" / "detect")
     assert main(["graph", str(folder), "--method", "cch_hollow"]) == 0
     out = capsys.readouterr().out
     assert "6 active channels" in out and f"excluded {onsets.size} stimulation pulses (pulse to +200 ms)" in out
@@ -245,7 +245,7 @@ def test_saved_graph_reloads_with_its_tested_spikes_and_plots(tmp_path):
         qc=ChannelQC(ids, np.full(len(ids), 100), np.zeros(len(ids), int), np.zeros(len(ids)), np.ones(len(ids), bool)),
         stim=(StimEvents("STG 1", "Single Pulse", onsets, onsets + 0.001),),
     )  # fmt: skip
-    folder = save_detection(det, tmp_path / "results" / "rec" / "detect_default")
+    folder = save_detection(det, tmp_path / "results" / "rec" / "detect")
     assert main(["graph", str(folder), "--method", "cch_hollow"]) == 0
     graph = tmp_path / "results" / "rec" / "graph_cch_hollow"
     for sub in ("all", "no_bursts"):

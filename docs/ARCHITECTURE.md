@@ -30,7 +30,7 @@ Each layer imports only from layers below it. There are no cycles.
                  │
  signal        preprocess   (window bridging, detection band)
                  │
- input         io  (MCS reader, events, sessions, inventory, legacy sidecars)
+ input         io  (MCS reader, events, sessions, inventory)
                  │
  foundation    probe   config   spiketrains   intervals
 ```
@@ -48,7 +48,7 @@ recording.h5 ─► io.load_session ─► Session
                    preprocess.detection_band ─► SI detect_peaks ─► spikes + polarity QC
                      │
                      ▼
-               DetectionResult ─► detect.save_detection ─► results/<recording>/detect_<profile>/
+               DetectionResult ─► detect.save_detection ─► results/<recording>/detect/
                      │                                      (meagraph view reads this too)
                      ▼
                connectivity.pipeline.graphs_from_detection(detection, methods, GraphConfig)
@@ -90,7 +90,7 @@ Every config is a frozen pydantic model next to the step that uses it, saved as 
 | `spiketrains`, `intervals` | `SpikeTrains` (select, positions, `without_periods`, SI conversion); merging and membership of `[start, stop]` intervals. |
 | `preprocess` | `InterpolateWindowsRecording` (D9) and the `detection_band` chain. |
 | `stimulation` | Fixed and per-pulse blanking windows, `measure_recovery`, `infer_site`, `audit_stimulation`, `stimulation_periods`. |
-| `detect` | `DetectionConfig` profiles (`default`, `legacy`), `detect_spikes`, polarity QC (D10), noise, network bursts (D15), result folders. |
+| `detect` | `DetectionConfig`, `detect_spikes`, polarity QC (D10), noise, network bursts (D15), result folders. |
 | `connectivity` | Estimator registry and `estimate`, `cch_hollow`, `cch_jitter`, `sttc`, surrogates and fitted p-values (D17), FDR, graph files. `pipeline.py` connects it to detection results. |
 | `synth` | Linear Hawkes network with known connections and optional confounds (D16). |
 | `benchmark` | Scenarios, scoring (including indirect false positives), parallel runner. |
@@ -105,7 +105,7 @@ Results go to `results/<recording name>/` in the recording's folder, so with the
 
 ```
 results/<recording>/
-  detect_<profile>/              meagraph detect
+  detect/                        meagraph detect
     spikes.npz                   spike times, amplitudes, waveforms (flat arrays)
     channels.csv                 per electrode: position, rate, noise, QC, exclusion, artifact recovery
     stimulation.csv              per pulse: STG output, onset, offset, site (header only if spontaneous)
@@ -128,7 +128,7 @@ A spec can also live outside the package; pass its YAML path instead of a name.
 
 **Another MCS stream.** Analog streams are selected by label (`stream="Filter (3)"`), or by `"raw"` for the hardware stream. Segment streams are selected by label (`"Spike Detector"`, `"Spike Sorter"`). New entity types belong in `io/mcs_events.py` and must be decoded by their ID, not by table row.
 
-**A detection setting.** Every parameter is a field of `DetectionConfig`. Pass a modified copy: `PROFILES["default"].model_copy(update={...})`. Results record the config they were made with.
+**A detection setting.** Every parameter is a field of `DetectionConfig`. Pass a modified config: `DetectionConfig(threshold_sigma=4.5)`. Results record the config they were made with.
 
 **A connectivity estimator** (Phase 5). Add one class to `meagraph/connectivity/` with:
 
@@ -151,5 +151,4 @@ Decorate it with `@register` and import it in `connectivity/__init__.py`. It the
 - **Unit tests** on small generated files in the MCS layout (`tests/mcs_fixture.py`). The fixture includes the traps found in Phase 0: a permuted `RowIndex`, non-zero ADZero, a filter stream stored before raw, shuffled InfoEvent rows, and sorter SegmentIDs out of row order.
 - **Ground-truth tests** of the connectivity methods on simulated networks (`tests/test_connectivity.py`).
 - **Structure guards** (`tests/test_architecture.py`): the core never imports matplotlib, and the estimators never import file reading or detection.
-- **Real-file tests**, marked `data`, which run when the recordings are in `data/` or in `$MEAGRAPH_DATA_DIR`. The `slow` regression test compares the `legacy` profile with `spikes.py`.
-- **A baseline guard:** a checksum test on the committed regression baseline in `tests/data/legacy_baseline/`.
+- **Real-file tests**, marked `data`, which run when the recordings are in `data/` or in `$MEAGRAPH_DATA_DIR`. - **A detection snapshot** (`tests/test_detection_snapshot.py`, marked `slow`): detection on four real recordings must match `tests/data/detection_snapshot.json` (spike counts, a hash of every spike time, noise, active channels). After an intended change, regenerate it with `MEAGRAPH_UPDATE_SNAPSHOT=1 pytest tests/test_detection_snapshot.py` and commit the new file with the change.

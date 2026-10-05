@@ -26,7 +26,7 @@ def recording_with_spikes(make_mcs_file):
 def test_viewer_finds_detection_results(recording_with_spikes):
     data = load_viewer_data(recording_with_spikes)
     assert data.electrodes == ("47", "12", "33")  # reference 15 dropped
-    assert data.spike_source.startswith("meagraph detect (default")
+    assert data.spike_source == "meagraph detect (5 sigma)"
     assert data.streams == ("Data Acquisition (1)", "Filter (1)")
     np.testing.assert_allclose(data.stim_onsets["STG 1"], [0.6, 1.1, 1.6])
 
