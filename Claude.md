@@ -20,7 +20,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - `meagraph graph` and `meagraph benchmark`.
   - First real edges in DIV142: 78→87 and 32→14 (the latter replicated in the associative file).
 - **Full benchmark done** (2026-10-05): results in `docs/METHODS.md` § Validation and `docs/benchmark/benchmark.csv`. The D19 proposals await the owner.
-  - It takes about 1.5 CPU-hours: run `caffeinate -i meagraph benchmark --n-jobs 4`.
+  - With Phase 4.5 it has 96 networks × 5 methods, about 2 CPU-hours (25 min with 4 jobs): run `caffeinate -i meagraph benchmark --n-jobs 4`.
   - macOS throttles long background jobs about 100× when idle. That, not the code, was why a run stalled overnight.
 - **Architecture cleanup done** (2026-10-05, D20): layer map and output folder formats in `docs/ARCHITECTURE.md`.
   - Detection folders are self-contained (positions + `stimulation.csv`); `meagraph graph` reads only them and records a `GraphConfig`.
@@ -29,8 +29,11 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - Pending owner OK (file deletions were blocked): turn `benchmark/` and `viz/` packages into single modules, delete the empty `realtime/` and `reservoir/` stubs, move `SessionConfig` from `config/models.py` into `io/session.py`.
 - **Legacy detection removed** (2026-10-05, D21): no profiles, no `spikes.py` regression test or baseline, no `.spikes.h5` reader. `tests/test_detection_snapshot.py` guards detection output; results go to `results/<recording>/detect/`.
 - **`meagraph plot`** (2026-10-05) draws a saved graph in 3D with each edge's correlogram; `connectivity.pipeline.load_graph` returns a graph with the exact spikes it was tested on.
-- **Next is Phase 5:** more methods, namely GLM, stimulus-evoked, CFP, and possibly Elephant's TSPE (`elephant.functional_connectivity.total_spiking_probability_edges`).
-- Decisions D1–D17 and D21 are Accepted (D11 superseded by D21). D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults) and D20 (self-contained result folders) are Proposed.
+- **Phase 4.5 done** (2026-10-05, D22 Proposed): `tspe` (Elephant TSPE + jitter significance; signed, detects inhibition) and `cfp` (conditional firing probability, burst-scale); inhibitory units in `synth` (`inhibitory_fraction`, suppression windows, time-ordered cascade); signed scoring, `inhibition_scenarios()` and rule variants (`tspe_noreverse`, `cfp_narrow`) in `benchmark`. `meagraph graph` runs all five methods by default.
+  - Elephant TSPE returns (target, source) matrices; meagraph transposes. Its `normalize` option has a delay-indexing bug; not used. A strong excitatory i→j makes j→i score negative (reverse artefact).
+  - The published CFP width rule (≥ 5 ms at 80 % of peak) rejects monosynaptic (~1 ms) peaks; CFP delays at the 0.5 ms boundary mean a peak at or before zero lag.
+- **Next is Phase 5:** GLM (NeMoS), stimulus-evoked estimator, transfer entropy if practical.
+- Decisions D1–D17 and D21 are Accepted (D11 superseded by D21). D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults), D20 (self-contained result folders) and D22 (TSPE, CFP, inhibition) are Proposed.
 - **Legacy scripts retired** 2026-10-05 (see Existing code below).
 
 ## Hardware and data
@@ -123,6 +126,7 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q15.** In stim47, positive QC events are elevated on several channels. Are slow artifact components outlasting the 50 ms QC exclusion? Check in Phase 6.
 - **Q16.** The synaptic window is [1, 4) ms (D14). In DIV142, the 32→14 correlogram peaks at about 6 ms. Should a wider window be used, or a sensitivity analysis run?
 - **Q17.** Accept D18, excluding spikes up to 200 ms after each pulse in spontaneous connectivity?
+- **Q19.** Accept the D22 choices (inhibition model, TSPE significance and reverse rule, CFP test, CFP width rule, CFP boundary-delay rule)?
 - **Q18.** Accept D19? It would make the burst-removed analysis primary, set `drop_symmetric=False`, and make `cch_jitter` the primary method.
 
 Resolved 2026-10-03:

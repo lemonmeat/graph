@@ -29,7 +29,7 @@ meagraph view data/recording.h5     # interactive viewer (click electrodes in th
 meagraph benchmark --n-jobs 4       # score the connectivity methods on simulated networks (see below; --quick: seconds)
 ```
 
-The full benchmark runs 81 simulated networks: about 1.5 CPU-hours, or roughly 25 minutes with `--n-jobs 4`. macOS throttles long jobs heavily when the machine idles or sleeps, so on a Mac start it as `caffeinate -i meagraph benchmark --n-jobs 4`.
+The full benchmark runs 96 simulated networks (81 excitatory-only, 15 with inhibition) through all five methods: about 2 CPU-hours, or roughly 25 minutes with `--n-jobs 4`. macOS throttles long jobs heavily when the machine idles or sleeps, so on a Mac start it as `caffeinate -i meagraph benchmark --n-jobs 4`.
 
 - `--stim-site` names the electrode that was stimulated, because MCS files do not record it. With two stimulator outputs, use `--stim-site "STG 1=47" --stim-site "STG 2=82"`.
 - `meagraph detect` writes `results/<recording>/detect/` next to the recording. It contains:
@@ -48,7 +48,9 @@ The full benchmark runs 81 simulated networks: about 1.5 CPU-hours, or roughly 2
   Each holds `graph.graphml` and `graph.json` (nodes with 3D positions), `edges.csv` (every tested pair) and `matrices.npz`. Its `config.yaml` records the method's parameters and how the spikes were chosen (channels, stimulation exclusion, burst settings). The methods are:
   - `cch_jitter`: cross-correlogram tested against spike-time jitter;
   - `cch_hollow`: cross-correlogram against a smoothed baseline;
-  - `sttc`: spike time tiling coefficient, undirected.
+  - `sttc`: spike time tiling coefficient, undirected;
+  - `tspe`: total spiking probability edges, which also reports **inhibitory** edges (negative weight; drawn blue by `meagraph plot`);
+  - `cfp`: conditional firing probability, functional coupling at the timescale of network bursts (0–500 ms).
 
   In stimulation recordings, spikes from each pulse to 200 ms after it are left out (`--exclude-stim-ms`).
 - `meagraph plot` draws one graph: the electrodes in 3D with an arrow per edge (colour = firing rate), and the cross-correlogram of each edge with the tested window shaded. The correlograms use exactly the spikes the graph was tested on. Choose the graph with `--method cch_hollow` and `--spike-set no_bursts`, or give a graph folder as the path. `--save graph.png` writes an image instead of opening a window. See `docs/METHODS.md` for what an edge means, and what it does not.

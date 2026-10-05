@@ -98,6 +98,24 @@ For each ordered pair (source i, target j), the cross-correlogram counts target 
 
 The STTC (Cutts & Eglen, 2014) is an undirected measure of co-firing within ±Δt that does not depend on firing rate. It was computed with Δt = 5 ms. Significance came from the same interval-jitter surrogates, with a normal distribution fitted to the surrogate values. STTC with Δt = 50 ms was reported as a descriptive measure of burst-scale co-firing.
 
+### Total spiking probability edges
+
+TSPE (De Blasi et al., 2019) was designed for in vitro MEA recordings and detects both excitatory and inhibitory relations. It was computed with Elephant (Denker et al., 2018) on spike trains binned at 1 ms, with Elephant's default edge-filter windows and delays up to 25 ms. For each pair, the normalized cross-correlation is filtered with edge filters: a local peak after the source spike gives a positive score, a local dip a negative one.
+
+**Significance.** Elephant returns scores without a test. Each score was compared with the same 10 ms interval-jitter surrogates as the jitter test (1000 surrogates), using a normal distribution fitted to the surrogate scores. The two-sided p-value was corrected with Benjamini–Hochberg across ordered pairs. **Weight:** score minus surrogate mean; positive = excitatory, negative = inhibitory. **Delay:** the lag of the largest absolute score.
+
+**Known artefact.** A strong excitatory i → j makes the reverse direction j → i score negative, because the filter's leading window sees the i → j peak at negative lag. The benchmark counts these reverse "inhibitory" edges separately.
+
+### Conditional firing probability
+
+CFP (le Feber et al., 2007) is the probability that electrode j fires in the 1 ms bin at lag τ after a spike of electrode i, for τ from 0 to 500 ms. Related pairs show a peak; its height above the curve's offset is the relation's strength and its latency the delay. Strength and delay come from a least-squares fit of M / (1 + ((τ − T)/w)²) + offset; the exact form of the original fit has not been checked against the paper.
+
+**Significance (our implementation).** The original criterion is a curve that "clearly deviates from flat". Here the statistic was the peak of the curve after 5 ms smoothing minus its mean, tested against 1000 surrogates in which every train was shifted circularly by an independent random offset. Shifting keeps each train's own structure, including its bursts, but breaks the timing between trains. A fitted normal gave the p-value, corrected with Benjamini–Hochberg across ordered pairs.
+
+**Validity.** As in Martiniuc et al. (2015), a relation was accepted only if the peak was at least 5 ms wide at 80 % of its height and its delay at most 250 ms.
+
+**What CFP measures.** Shared network bursts are part of the CFP, so co-bursting pairs are related even without a synapse. CFP describes functional coupling at the timescale of network bursts, which is how it is used in studies of stimulation-induced change (le Feber et al., 2010), not monosynaptic connectivity.
+
 ### Multiple comparisons and burst control
 
 **Multiple comparisons.** p-values were corrected with the Benjamini–Hochberg procedure (Benjamini & Hochberg, 1995) at a false discovery rate of 5 %:
@@ -105,7 +123,7 @@ The STTC (Cutts & Eglen, 2014) is an undirected measure of co-firing within ±Δ
 - correlogram methods: across all tested ordered pairs;
 - STTC: across unordered pairs.
 
-**Burst control.** Each method was run on all spikes and again with network-burst periods removed. Edges significant in both analyses are reported as robust.
+**Burst control.** Each method was run on all spikes and again with network-burst periods removed. Edges significant in both analyses (and, for TSPE, of the same sign) are reported as robust.
 
 ### Validation on synthetic networks (`meagraph.synth`, `meagraph.benchmark`)
 
@@ -114,6 +132,7 @@ The STTC (Cutts & Eglen, 2014) is an undirected measure of co-firing within ±Δ
 - Each spike of unit i adds on average W_ij spikes to unit j after a 1.5–3.5 ms delay.
 - Units had baseline rates of 0.2–2 Hz and sat on the electrode positions of the array.
 - Optional confounds were network bursts matched to the DIV142 recording, periodic stimulation, and detection errors.
+- **Inhibition** (optional). A fraction of units were inhibitory, and all their connections were inhibitory (Dale's principle). After an inhibitory spike, each target spike within the connection's delay plus 10 ms was deleted with the connection's suppression probability; deleted spikes caused no further spikes. With inhibition the cascade was simulated in time order; without it, the network is identical to the excitatory-only model.
 
 **Scoring.** For each method, recording length and connection strength, the scores were:
 
@@ -127,7 +146,8 @@ The STTC (Cutts & Eglen, 2014) is an undirected measure of co-firing within ±Δ
 - Recordings of 2, 5, 10 or 30 min, with and without DIV142-like network bursts.
 - Null networks (no connections) with and without bursts, and with periodic stimulation.
 - 3 random seeds per scenario, 1000 jitter surrogates, FDR q = 0.05.
-- Command: `meagraph benchmark`. Per-network rows are in `docs/benchmark/benchmark.csv`.
+- Inhibition scenarios: 20 % of units inhibitory (suppression probability 0.6 for 10 ms), excitatory weight 0.06; 10 and 30 min, with and without bursts, plus one 10 min network with 2–10 Hz rates. TSPE and CFP used 200 surrogates in the benchmark.
+- Command: `meagraph benchmark`. Per-network rows for all five methods are in `docs/benchmark/benchmark.csv`.
 
 **Recall vs recording length** (mean over connection strengths and seeds):
 
@@ -166,6 +186,38 @@ The STTC (Cutts & Eglen, 2014) is an undirected measure of co-firing within ±Δ
 | network bursts | 0 | 0 | 0 |
 | periodic stimulation (shared drive) | 0 | 0 | **62 (52 %)** |
 
+**TSPE and CFP on the same grid** (excitatory scenarios; recall at 2 / 5 / 10 / 30 min):
+
+| Method | Spikes analysed | 2 min | 5 min | 10 min | 30 min |
+|---|---|---|---|---|---|
+| `tspe` | no bursts present | 0.47 | 0.69 | 0.79 | 0.95 |
+| `tspe` | bursts present, all spikes | 0.38 | 0.45 | 0.66 | 0.90 |
+| `tspe` | bursts present, burst periods removed | 0.51 | 0.66 | 0.81 | 0.95 |
+| `cfp` (published 5 ms width rule) | no bursts present | 0.00 | 0.00 | 0.00 | 0.00 |
+| `cfp` (published 5 ms width rule) | bursts present, all spikes | 0.44 | 0.39 | 0.31 | 0.34 |
+| `cfp_narrow` (no width rule) | no bursts present | 0.73 | 0.87 | 0.95 | 1.00 |
+| `cfp_narrow` (no width rule) | bursts present, burst periods removed | 0.78 | 0.87 | 0.94 | 1.00 |
+
+| Method | Precision, no bursts / bursts (all spikes) | False positives that are indirect | Delay error | ROC area |
+|---|---|---|---|---|
+| `tspe` | 0.89 / 0.97 | 135 of 148 | 0.23 ms | 0.95 |
+| `cfp` | 0.50 / 0.05 | 1587 of 5667 | 2.2 ms | 0.95 |
+| `cfp_narrow` | 0.79 / 0.11 (0.79 with bursts removed) | 1846 of 6129 | 0.14 ms (bursts removed) | 0.95–0.98 |
+
+Null networks (mean false edges per network): `tspe` 1, 0 and 0 (no bursts, bursts, stimulation); `cfp` 0, **202 (84 %)** and 0.3; `cfp_narrow` 1, **214 (89 %)** and 19 (8 %).
+
+**Inhibition** (TSPE, all spikes; 18 inhibitory connections per scenario over 3 seeds):
+
+| Scenario | Inhibitory found | False inhibitory (of which reverse artefact) | With the reverse rule: found / false |
+|---|---|---|---|
+| no bursts, 10 min | 1 | 10 (7) | 1 / 3 |
+| no bursts, 30 min | 1 | 25 (22) | 0 / 3 |
+| bursts, 10 min | 0 | 2 (2) | 0 / 0 |
+| bursts, 30 min | 1 | 12 (10) | 0 / 2 |
+| 2–10 Hz rates, 10 min | 1 | 15 (15) | 0 / 0 |
+
+Ranking inhibitory pairs by p-value (ROC area, 0.5 = chance): TSPE 0.54–0.81, `cch_jitter`'s one-sided inhibition p 0.58–0.70. In single-network checks, TSPE's raw score separated inhibitory pairs well at 2–10 Hz (ROC area 0.94) but not at 0.2–2 Hz (0.49), whatever the jitter window (10, 25 or 50 ms).
+
 ### What the validation shows
 
 1. **No false edges from rate effects.** In these simulations, none of the methods produced false edges from network bursts or rate differences.
@@ -175,16 +227,27 @@ The STTC (Cutts & Eglen, 2014) is an undirected measure of co-firing within ±Δ
 5. **Recording length.** About 30 min of spontaneous activity recovers nearly all connections down to a transmission probability of 0.03. 10 min misses about a quarter of the weakest ones.
 6. **`cch_jitter` is the best primary method.** It has the highest precision, a delay for every edge, and no false edges in any null scenario. It is also the most conservative under the null (D17), which costs some recall in short recordings.
 
-**Limitations of the validation.** The simulated network is linear, has excitatory connections only, and keeps all delays inside the test window. Its bursts are rate surges rather than propagating network events. Real data can violate each of these assumptions.
+7. **TSPE does not improve excitatory mapping.** It has lower recall than `cch_jitter` at every recording length and lower precision without bursts. Its advantages are a signed output and delays beyond the 1–4 ms window (Q16).
+8. **Inhibition is not detectable at culture-like firing rates.** At 0.2–2 Hz the target neuron fires too rarely for a 10 ms suppression to show, even in 30 min, and no method found more than 1 of 18 inhibitory connections. The active DIV142 electrodes fire at 0.1–1.7 Hz, so the absence of inhibitory edges in these recordings says nothing about inhibition in the culture.
+9. **Most of TSPE's inhibitory calls are its reverse artefact:** 56 of 64 false inhibitory edges were the opposite direction of an excitatory connection. Dropping inhibitory edges that oppose a significant excitatory edge removes all 56, at the cost of 3 of the 4 true inhibitory edges found.
+10. **CFP measures co-bursting, not synapses.** With the published width rule it found no monosynaptic connection, yet marked 84 % of unconnected pairs in burst networks. Without the rule it finds connections (recall comparable to `cch_jitter`) but with precision 0.79, and only after burst periods are removed. CFP is suited to tracking burst-scale functional change (Phase 6), not to mapping connections.
+11. **The burst detector over-detects at high rates.** In the 2–10 Hz network, ISI_N (10 pooled spikes within 100 ms) marked much of the recording as bursts, so the burst-removed analyses lost most of their spikes (`cch_jitter` recall 1.00 → 0.45). Its thresholds should scale with the network's firing rate (D15).
+
+**Limitations of the validation.** The simulated network is linear apart from the suppression windows, keeps excitatory delays inside the test window, and models inhibition as spike deletion rather than conductance. Its bursts are rate surges rather than propagating network events. Real data can violate each of these assumptions.
 
 ## References
 
 - Amarasingham, A., Harrison, M. T., Hatsopoulos, N. G., & Geman, S. (2012). Conditional modeling and the jitter method of spike resampling. *Journal of Neurophysiology*, 107(2), 517–531.
 - Bakkum, D. J., Radivojevic, M., Frey, U., Franke, F., Hierlemann, A., & Takahashi, H. (2013). Parameters for burst detection. *Frontiers in Computational Neuroscience*, 7, 193.
 - Benjamini, Y., & Hochberg, Y. (1995). Controlling the false discovery rate: a practical and powerful approach to multiple testing. *Journal of the Royal Statistical Society B*, 57(1), 289–300.
+- De Blasi, S., Ciba, M., Bahmer, A., & Thielemann, C. (2019). Total spiking probability edges: a cross-correlation based method for effective connectivity estimation of cortical spiking neurons. *Journal of Neuroscience Methods*, 312, 169–181.
+- Denker, M., Yegenoglu, A., & Grün, S. (2018). Collaborative HPC-enabled workflows on the HBP Collaboratory using the Elephant framework. *Neuroinformatics 2018*, P19.
 - Cutts, C. S., & Eglen, S. J. (2014). Detecting pairwise correlations in spike trains: an objective comparison of methods and application to the study of retinal waves. *Journal of Neuroscience*, 34(43), 14288–14303.
 - English, D. F., McKenzie, S., Evans, T., Kim, K., Yoon, E., & Buzsáki, G. (2017). Pyramidal cell-interneuron circuit architecture and dynamics in hippocampal networks. *Neuron*, 96(2), 505–520.
 - Hawkes, A. G. (1971). Spectra of some self-exciting and mutually exciting point processes. *Biometrika*, 58(1), 83–90.
+- le Feber, J., et al. (2007). Conditional firing probabilities in cultured neuronal networks: a stable underlying structure in widely varying spontaneous activity patterns. *Journal of Neural Engineering*, 4(2), 54–67.
+- le Feber, J., Stegenga, J., & Rutten, W. L. C. (2010). The effect of slow electrical stimuli to achieve learning in cultured networks of rat cortical neurons. *PLoS ONE*, 5(1), e8871. *(Citation to be verified.)*
+- Martiniuc, A. V., et al. (2015). Paired spiking robustly shapes spontaneous activity in neural networks in vitro. arXiv:1510.09138.
 - Stark, E., & Abeles, M. (2009). Unbiased estimation of precise temporal correlations between spike trains. *Journal of Neuroscience Methods*, 179(1), 90–100.
 
 - Buccino, A. P., Hurwitz, C. L., Garcia, S., Magland, J., Siegle, J. H., Hurwitz, R., & Hennig, M. H. (2020). SpikeInterface, a unified framework for spike sorting. *eLife*, 9, e61834.

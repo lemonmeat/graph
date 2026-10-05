@@ -7,11 +7,20 @@ the correlogram estimators measure, so recovery can be scored directly.
 
 Optional confounds (each off by default): network bursts (shared rate surges), periodic
 stimulation (shared, time-locked drive), and imperfect detection (missed and false spikes).
+
+Optional inhibition (off by default; DECISIONS.md D22): a fraction of units are inhibitory, and
+every connection they make is inhibitory (Dale's principle). After an inhibitory spike, each
+target spike in the window [delay, delay + ``inhibition_ms``] is deleted with the connection's
+probability ``S[i, j]``; deleted spikes cause nothing. With inhibition the cascade is simulated in
+time order, since a later inhibitory spike can only delete spikes that come after it. Without
+inhibition both orders give the same process, and the faster generation-by-generation
+simulation is used (so excitatory-only networks are unchanged by this option).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import heapq
+from dataclasses import dataclass, field
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, NonNegativeFloat, PositiveFloat, PositiveInt
@@ -41,21 +50,34 @@ class NetworkConfig(BaseModel):
     miss_fraction: float = 0.0  # detection: fraction of true spikes lost
     false_rate_hz: NonNegativeFloat = 0.0  # detection: noise spikes added per unit
     dead_time_ms: NonNegativeFloat = 1.0  # detection cannot resolve spikes closer than this
+    inhibitory_fraction: float = 0.0  # fraction of units whose connections are all inhibitory
+    inhibition: tuple[float, float] = (0.6, 0.6)  # suppression probability, uniform per inhibitory connection
+    inhibition_ms: PositiveFloat = 10.0  # suppression lasts this long after the connection's delay
     seed: int = 0
 
 
 @dataclass(frozen=True, eq=False)
 class SyntheticNetwork:
     trains: SpikeTrains
-    weights: np.ndarray  # (source, target) true transmission probability; 0 = not connected
-    delays_ms: np.ndarray  # mean latency of each connection; NaN = not connected
+    weights: np.ndarray  # (source, target) true transmission probability of excitatory connections; 0 = none
+    delays_ms: np.ndarray  # mean latency of each connection, excitatory or inhibitory; NaN = not connected
     bursts: np.ndarray  # (k, 2) [start, stop] s
     stim_times_s: np.ndarray
     config: NetworkConfig
+    suppression: np.ndarray = field(default_factory=lambda: np.zeros((0, 0)))  # inhibitory connections; 0 = none
+
+    @property
+    def excitatory(self) -> np.ndarray:
+        return self.weights > 0
+
+    @property
+    def inhibitory(self) -> np.ndarray:
+        return self.suppression > 0 if self.suppression.size else np.zeros_like(self.excitatory)
 
     @property
     def connected(self) -> np.ndarray:
-        return self.weights > 0
+        """Any connection, excitatory or inhibitory."""
+        return self.excitatory | self.inhibitory
 
 
 def _immigrants(cfg: NetworkConfig, rates: np.ndarray, rng: np.random.Generator):
@@ -110,13 +132,35 @@ def simulate_network(config: NetworkConfig | None = None) -> SyntheticNetwork:
     np.fill_diagonal(connected, False)
     W = np.where(connected, rng.uniform(*cfg.weight, (n, n)), 0.0)
     D = np.where(connected, rng.uniform(*cfg.delay_ms, (n, n)), np.nan)
+    S = np.zeros((n, n))
+    if cfg.inhibitory_fraction > 0:
+        inhibitory_units = rng.random(n) < cfg.inhibitory_fraction
+        S[inhibitory_units] = np.where(connected[inhibitory_units], rng.uniform(*cfg.inhibition, (int(inhibitory_units.sum()), n)), 0.0)
+        W[inhibitory_units] = 0.0
     if n and np.max(np.abs(np.linalg.eigvals(W))) >= 0.95:
         raise ValueError("network too excitable (spectral radius of W >= 0.95); lower weights or connection_prob")
 
     gen_t, gen_u, bursts, stim = _immigrants(cfg, rates, rng)
+    if S.any():
+        t_all, u_all = _cascade_in_time_order(gen_t, gen_u, W, D, S, cfg, rng)
+    else:
+        t_all, u_all = _cascade_by_generation(gen_t, gen_u, W, D, cfg, rng)
+
+    times = {}
+    for k, label in enumerate(labels):
+        t = np.sort(t_all[(u_all == k) & (t_all >= 0) & (t_all < T)])
+        t = t[rng.random(t.size) >= cfg.miss_fraction]
+        t = np.sort(np.concatenate([t, rng.uniform(0, T, rng.poisson(cfg.false_rate_hz * T))]))
+        times[label] = _dead_time(t, cfg.dead_time_ms / 1e3)
+    trains = SpikeTrains.from_dict(times, 0.0, T).with_positions(positions)
+    return SyntheticNetwork(trains, W, D, bursts, stim, cfg, S)
+
+
+def _cascade_by_generation(gen_t, gen_u, W, D, cfg: NetworkConfig, rng):
+    """Excitatory-only cascade, one generation of caused spikes at a time (vectorized)."""
     all_t, all_u = [gen_t], [gen_u]
     sources, targets = np.nonzero(W)
-    while gen_t.size:  # each generation of caused spikes; terminates because W is subcritical
+    while gen_t.size:  # terminates because W is subcritical
         new_t, new_u = [], []
         for i, j in zip(sources, targets):
             t_i = gen_t[gen_u == i]
@@ -129,13 +173,37 @@ def simulate_network(config: NetworkConfig | None = None) -> SyntheticNetwork:
         gen_u = np.concatenate(new_u) if new_u else np.zeros(0, np.int64)
         all_t.append(gen_t)
         all_u.append(gen_u)
-    t_all, u_all = np.concatenate(all_t), np.concatenate(all_u)
+    return np.concatenate(all_t), np.concatenate(all_u)
 
-    times = {}
-    for k, label in enumerate(labels):
-        t = np.sort(t_all[(u_all == k) & (t_all >= 0) & (t_all < T)])
-        t = t[rng.random(t.size) >= cfg.miss_fraction]
-        t = np.sort(np.concatenate([t, rng.uniform(0, T, rng.poisson(cfg.false_rate_hz * T))]))
-        times[label] = _dead_time(t, cfg.dead_time_ms / 1e3)
-    trains = SpikeTrains.from_dict(times, 0.0, T).with_positions(positions)
-    return SyntheticNetwork(trains, W, D, bursts, stim, cfg)
+
+def _cascade_in_time_order(gen_t, gen_u, W, D, S, cfg: NetworkConfig, rng):
+    """Cascade with inhibition: candidate spikes are processed in time order. Each survives the
+    suppression windows active on its unit (independently per window), and only survivors cause
+    excitatory children or open suppression windows on their inhibitory targets."""
+    n, T = W.shape[0], cfg.duration_s
+    heap = list(zip(gen_t.tolist(), gen_u.tolist()))
+    heapq.heapify(heap)
+    exc_targets = [np.flatnonzero(W[i]) for i in range(n)]
+    inh_targets = [np.flatnonzero(S[i]) for i in range(n)]
+    windows: list[list[tuple[float, float, float]]] = [[] for _ in range(n)]  # per unit: heap of (end, start, keep)
+    dur, jitter = cfg.inhibition_ms / 1e3, cfg.delay_jitter_ms / 1e3
+    out_t, out_u = [], []
+    while heap:
+        t, j = heapq.heappop(heap)
+        if t >= T:
+            continue  # beyond the recording, and so are its children
+        active = windows[j]
+        while active and active[0][0] < t:
+            heapq.heappop(active)
+        keep = np.prod([k for _, start, k in active if start <= t]) if active else 1.0
+        if keep < 1.0 and rng.random() >= keep:
+            continue
+        out_t.append(t)
+        out_u.append(j)
+        for k in exc_targets[j]:
+            for _ in range(rng.poisson(W[j, k])):
+                heapq.heappush(heap, (t + max(D[j, k] / 1e3 + rng.normal(0.0, jitter), 0.0), int(k)))
+        for k in inh_targets[j]:
+            start = t + D[j, k] / 1e3
+            heapq.heappush(windows[k], (start + dur, start, 1.0 - S[j, k]))
+    return np.array(out_t, dtype=np.float64), np.array(out_u, dtype=np.int64)

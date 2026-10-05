@@ -40,7 +40,7 @@ class GraphConfig(BaseModel):
 class BurstControlled:
     all: ConnectivityResult
     no_bursts: ConnectivityResult
-    robust: ConnectivityResult  # ``all`` with significant = significant in both
+    robust: ConnectivityResult  # ``all`` with significant = significant in both, with the same sign
     bursts: np.ndarray  # (k, 2) periods removed for ``no_bursts``
 
 
@@ -55,8 +55,17 @@ def burst_controlled(
     periods = network_bursts(trains, burst_config) if bursts is None else bursts
     full = estimate(trains, method, config)
     part = estimate(trains.without_periods(periods), method, config)
-    robust = replace(full, significant=full.significant & part.significant)
-    return BurstControlled(full, part, robust, periods)
+    return BurstControlled(full, part, replace(full, significant=robust_mask(full, part)), periods)
+
+
+def robust_mask(full: ConnectivityResult, part: ConnectivityResult, full_sig=None, part_sig=None) -> np.ndarray:
+    """Edges significant in both results with the same sign (for signed methods: same kind of edge)."""
+    a = full.significant if full_sig is None else full_sig
+    b = part.significant if part_sig is None else part_sig
+    if not full.signed:
+        return a & b
+    with np.errstate(invalid="ignore"):
+        return a & b & (np.sign(full.weights) == np.sign(part.weights))
 
 
 def graphs_from_detection(

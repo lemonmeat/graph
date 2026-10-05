@@ -22,6 +22,9 @@ class ConnectivityResult:
 
     Entries for pairs that were not tested (too few spikes, or the diagonal) are NaN in
     ``weights``, ``delays_ms`` and ``p_values`` and False in ``significant``.
+
+    ``signed`` results (methods that also detect inhibition) mark both kinds of edge in
+    ``significant``; the sign of the weight says which (negative = inhibitory).
     """
 
     method: str
@@ -36,6 +39,7 @@ class ConnectivityResult:
     duration_s: float
     positions_um: np.ndarray | None = None
     extra: dict = field(default_factory=dict)  # method-specific arrays, e.g. correlograms
+    signed: bool = False
 
     @property
     def tested(self) -> np.ndarray:
@@ -49,7 +53,7 @@ class ConnectivityResult:
                 continue
             rows.append(dict(source=self.node_ids[i], target=self.node_ids[j], weight=float(self.weights[i, j]),
                              delay_ms=float(self.delays_ms[i, j]), p_value=float(self.p_values[i, j])))  # fmt: skip
-        return sorted(rows, key=lambda r: -r["weight"])
+        return sorted(rows, key=lambda r: -abs(r["weight"]))
 
 
 class Estimator(Protocol):

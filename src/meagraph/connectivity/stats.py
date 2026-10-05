@@ -43,6 +43,12 @@ def interval_jitter(times_s: np.ndarray, window_s: float, t_start: float, t_stop
     return np.sort(left + rng.random((n, t.size)) * width, axis=1)
 
 
+def circular_shift(times_s: np.ndarray, t_start: float, t_stop: float, shift_s: float) -> np.ndarray:
+    """A train moved by ``shift_s`` with wrap-around inside [t_start, t_stop), sorted."""
+    span = t_stop - t_start
+    return np.sort(t_start + np.mod(np.asarray(times_s) - t_start + shift_s, span))
+
+
 def sttc(a: np.ndarray, b: np.ndarray, dt_s: float, t_start: float, t_stop: float) -> float:
     """Spike time tiling coefficient (Cutts & Eglen 2014), vectorized; matches Elephant (tested)."""
     if a.size == 0 or b.size == 0:

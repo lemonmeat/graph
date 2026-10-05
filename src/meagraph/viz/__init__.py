@@ -159,10 +159,11 @@ def plot_ccg(counts: np.ndarray, lag_edges_ms: np.ndarray, *, window_ms: tuple[f
 
 def plot_graph_3d(positions_um: np.ndarray, node_ids: Sequence[str], edges: Sequence[tuple[int, int]], *,
                   directed: bool = True, values: np.ndarray | None = None, background_um: np.ndarray | None = None,
-                  ax=None):  # fmt: skip
+                  inhibitory: Sequence[bool] | None = None, ax=None):  # fmt: skip
     """Nodes at their 3D positions, coloured by ``values`` (e.g. firing rate), with ``edges``
-    as (source index, target index) arrows (lines if undirected). ``background_um`` draws the
-    other electrodes faintly, for context. Works for any probe; planar probes have z = 0."""
+    as (source index, target index) arrows (lines if undirected); edges flagged ``inhibitory``
+    are blue, the others orange. ``background_um`` draws the other electrodes faintly, for
+    context. Works for any probe; planar probes have z = 0."""
     ax = _ax(ax, projection="3d")
     pos = np.asarray(positions_um, dtype=np.float64)
     if background_um is not None and len(background_um):
@@ -175,12 +176,13 @@ def plot_graph_3d(positions_um: np.ndarray, node_ids: Sequence[str], edges: Sequ
     lift = 0.06 * max(float(span.max()), 1.0)
     for k, label in enumerate(node_ids):
         ax.text(pos[k, 0], pos[k, 1], pos[k, 2] + lift, str(label), fontsize=8, color=INK)
-    for i, j in edges:
+    for k, (i, j) in enumerate(edges):
         d = pos[j] - pos[i]
+        color = ACCENT if inhibitory is not None and inhibitory[k] else WARM
         if directed:
-            ax.quiver(*pos[i], *d, color=WARM, linewidth=2, arrow_length_ratio=0.12)
+            ax.quiver(*pos[i], *d, color=color, linewidth=2, arrow_length_ratio=0.12)
         else:
-            ax.plot(*np.column_stack([pos[i], pos[j]]), color=WARM, linewidth=2)
+            ax.plot(*np.column_stack([pos[i], pos[j]]), color=color, linewidth=2)
     ax.set_xlabel("x (µm)")
     ax.set_ylabel("y (µm)")
     ax.set_zlabel("z (µm)")
@@ -210,9 +212,11 @@ def plot_connectivity(result, ccg: np.ndarray | None = None, lag_edges_ms: np.nd
         ax.text2D(0.5, 0.5, "no electrode positions saved", ha="center", transform=ax.transAxes)
     else:
         plot_graph_3d(result.positions_um, result.node_ids, pairs, directed=result.directed,
-                      values=result.n_spikes / result.duration_s, background_um=background_um, ax=ax)  # fmt: skip
+                      values=result.n_spikes / result.duration_s, background_um=background_um,
+                      inhibitory=[result.signed and e["weight"] < 0 for e in edges], ax=ax)  # fmt: skip
     more = f" (correlograms: strongest {len(shown)})" if len(edges) > len(shown) > 0 else ""
-    ax.set_title(f"{title}\n{result.method}: {len(edges)} edge(s){more}; colour = rate", fontsize=9)
+    kinds = "; orange = excitatory, blue = inhibitory" if result.signed else ""
+    ax.set_title(f"{title}\n{result.method}: {len(edges)} edge(s){more}; node colour = rate{kinds}", fontsize=9)
     window = result.params.get("window_ms")
     for k, e in enumerate(shown):
         a = fig.add_subplot(grid[k // 3, 1 + k % 3])
@@ -220,7 +224,8 @@ def plot_connectivity(result, ccg: np.ndarray | None = None, lag_edges_ms: np.nd
         plot_ccg(ccg[i, j], lag_edges_ms, window_ms=tuple(window) if window else None, ax=a)
         arrow = "→" if result.directed else "–"
         delay = f", delay {e['delay_ms']:.2f} ms" if np.isfinite(e["delay_ms"]) else ""
-        a.set_title(f"{e['source']} {arrow} {e['target']}{delay}, p {e['p_value']:.1g}", fontsize=9)
+        kind = (" inhibitory" if e["weight"] < 0 else " excitatory") if result.signed else ""
+        a.set_title(f"{e['source']} {arrow} {e['target']}{kind}{delay}, p {e['p_value']:.1g}", fontsize=9)
     fig.tight_layout()
     return fig
 

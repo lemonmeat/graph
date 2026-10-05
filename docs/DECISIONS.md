@@ -474,3 +474,36 @@ From the full benchmark (`docs/METHODS.md` § Validation; `docs/benchmark/benchm
 
 **What replaces the regression test.** `tests/test_detection_snapshot.py` fingerprints detection on four real recordings (spike counts, a hash of every spike's sample index, noise, active and excluded channels). Any change in which spikes are found fails the test. Intended changes regenerate the snapshot (`MEAGRAPH_UPDATE_SNAPSHOT=1`) in the same commit. The parity with `spikes.py` that D11 established remains documented there and in `docs/METHODS.md`; recover the old test and baseline from git history (commit before this change) if it must be re-run.
 
+
+---
+
+## D22. Phase 4.5: TSPE, CFP and inhibition in the benchmark
+
+**Status:** Proposed 2026-10-05 (implemented with the defaults below; each numbered choice awaits owner review)
+
+**What was added.** Two estimators (`tspe`, `cfp`), inhibitory units in the simulator, signed scoring and inhibition scenarios in the benchmark. `ConnectivityResult.signed` marks results that contain inhibitory edges (negative weight). `meagraph graph` now runs all five methods by default; `meagraph plot` draws inhibitory edges in blue.
+
+**Choices made, for review:**
+
+1. **Inhibition model** (simulator). A fraction of units are inhibitory and all their connections are inhibitory (Dale's principle). An inhibitory spike deletes each target spike in [delay, delay + 10 ms] with probability S (benchmark: 20 % inhibitory units, S = 0.6, excitatory weight 0.06). This is a simple suppression model, chosen because its ground truth is unambiguous; it is not a conductance model. Excitatory-only networks are unchanged (verified spike for spike against the previous simulator).
+2. **TSPE significance.** Elephant returns scores only. Scores are tested against 10 ms interval-jitter surrogates (as `cch_jitter`) with a normal fit (D17), two-sided, BH q = 0.05 across ordered pairs. The weight is the score's excess over the surrogate mean; its sign is the edge type. Elephant's defaults are kept (1 ms bins, its edge-filter windows, delays up to 25 ms). Elephant's matrices are (target, source) and are transposed; this was checked on simulations. Elephant's experimental `normalize` option is not used because it indexes delays by value instead of position (a bug).
+3. **TSPE reverse artefact.** A strong excitatory i → j makes j → i score negative. The benchmark reports these as `inh_fp_reverse` and scores a variant, `tspe_noreverse`, that drops inhibitory edges opposite a significant excitatory edge. Whether to adopt that rule depends on the benchmark (see `docs/METHODS.md` § Validation). It would also hide true reciprocal excitatory–inhibitory pairs.
+4. **CFP test.** "Clearly deviates from flat" is implemented as: peak of the 5 ms-smoothed CFP curve minus its mean, against circular-shift surrogates (each train shifted by an independent random offset), normal fit, BH. The original acceptance procedure (le Feber et al. 2007) could not be checked; the fitted curve M / (1 + ((τ − T)/w)²) + offset follows the le Feber group's form but should be verified against the paper.
+5. **CFP validity rule.** The published minimum peak width (5 ms at 80 % of the peak; Martiniuc et al. 2015) rejects monosynaptic peaks, which are about 1 ms wide: on simulations, CFP's test found every connection and the width rule then rejected all of them. The default keeps the published rule, so `cfp` reports burst-scale functional relations only. The benchmark also scores `cfp_narrow` (no width rule) for comparison.
+6. **CFP delays at the lower boundary.** CFP looks only at lags ≥ 0. A peak at or before zero lag (synchrony, or the reverse direction) is fitted at the 0.5 ms boundary. In DIV142, several CFP edges have exactly this delay. Proposal: also reject relations with delay < 1 ms.
+7. **Benchmark cost.** TSPE and CFP use 200 surrogates in `meagraph benchmark` (their p-values come from a fitted normal, D17). Real-data defaults are 1000.
+
+**Benchmark evidence** (`docs/METHODS.md` § Validation, points 7–11):
+
+- TSPE is less sensitive than `cch_jitter` for excitatory connections; its value here is delays beyond 4 ms.
+- Inhibition is undetectable at culture-like rates (0.2–2 Hz) by every method. DIV142's active electrodes fire at 0.1–1.7 Hz.
+- 56 of TSPE's 64 false inhibitory edges are the reverse artefact; the reverse rule removes them all and loses 3 of 4 true ones.
+- CFP with the published width rule finds no monosynaptic connections and marks 84 % of co-bursting unconnected pairs.
+
+**Recommendations, for the owner:**
+
+- (a) Make the reverse rule TSPE's default (point 3), and do not interpret inhibitory edges from recordings whose electrodes fire below a few Hz.
+- (b) Keep CFP with its published rule as a burst-scale functional measure for Phase 6, and exclude it from connectivity maps; add the delay ≥ 1 ms rule (point 6).
+- (c) Make the ISI_N burst thresholds scale with the pooled firing rate before using burst removal on higher-rate cultures.
+
+**First real-data results (DIV142).** TSPE replicates 78 → 87 (3 ms) and 32 → 14 at its actual peak delay (5–6 ms, see Q16). It adds longer-delay edges, 87 → 14 (15–16 ms) and 87 → 32 (10–11 ms), that replicate in the associative recording; their correlogram peaks are broad, suggesting multi-step paths. No inhibitory edges were found.

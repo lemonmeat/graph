@@ -122,22 +122,27 @@ def _graph(args: argparse.Namespace) -> int:
 
 
 def _benchmark(args: argparse.Namespace) -> int:
-    from meagraph.benchmark import run_benchmark, scenarios, summarize, write_rows
+    from meagraph.benchmark import inhibition_scenarios, run_benchmark, scenarios, summarize, write_rows
     from meagraph.synth import NetworkConfig
 
     progress = lambda message: print(message, flush=True)  # noqa: E731
     if args.quick:
-        rows = run_benchmark(scenarios(durations_s=(300,), weights=(0.1,), base=NetworkConfig(n_units=8)), seeds=(0,),
-                             method_overrides={m: {"n_surrogates": 200} for m in ("cch_jitter", "sttc")},
-                             n_jobs=args.n_jobs, progress=progress)  # fmt: skip
+        small = NetworkConfig(n_units=8)
+        todo = scenarios(durations_s=(300,), weights=(0.1,), base=small) + inhibition_scenarios(durations_s=(300,), bursts=(False,), base=small)[:1]
+        overrides = {m: {"n_surrogates": 200} for m in ("cch_jitter", "sttc", "tspe", "cfp")}
+        rows = run_benchmark(todo, seeds=(0,), method_overrides=overrides, n_jobs=args.n_jobs, progress=progress)
     else:
-        rows = run_benchmark(scenarios(), n_jobs=args.n_jobs, progress=progress)
+        # TSPE and CFP use 200 surrogates here: their p-values come from a fitted normal (D17), and
+        # 1000 would make the run several hours. Real-data defaults stay at 1000.
+        overrides = {m: {"n_surrogates": 200} for m in ("tspe", "cfp")}
+        rows = run_benchmark(scenarios() + inhibition_scenarios(), method_overrides=overrides, n_jobs=args.n_jobs, progress=progress)
     out = write_rows(rows, Path(args.out) / "benchmark.csv")
     for spikes in ("all", "robust"):
         print(f"\n{spikes} spikes:")
         for r in summarize(rows, spikes):
-            print(f"  {r['scenario']:<26} {r['method']:<11} precision {r['precision']:.2f}  recall {r['recall']:.2f}  "
-                  f"FPR {r['false_positive_rate']:.4f}  AUC {r['auc']:.2f}  delay err {r['delay_error_ms']:.2f} ms")  # fmt: skip
+            inh = f"  inh recall {r['inh_recall']:.2f}" if r["inh_recall"] == r["inh_recall"] else ""
+            print(f"  {r['scenario']:<26} {r['method']:<14} precision {r['precision']:.2f}  recall {r['recall']:.2f}  "
+                  f"FPR {r['false_positive_rate']:.4f}  AUC {r['auc']:.2f}  delay err {r['delay_error_ms']:.2f} ms{inh}")  # fmt: skip
     print(f"\nwrote {out}")
     return 0
 
@@ -219,7 +224,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("graph", help="connectivity graphs from detected spikes, with the network-burst control")
     p.add_argument("path", help="recording (.h5; uses its newest detection) or a detection folder")
     p.add_argument("--spikes", help="detection folder, if not the newest one")
-    p.add_argument("--method", nargs="+", default=["cch_jitter", "cch_hollow", "sttc"])
+    p.add_argument("--method", nargs="+", default=["cch_jitter", "cch_hollow", "sttc", "tspe", "cfp"])
     p.add_argument("--channels", choices=["active", "all"], default="active", help="QC-active channels only (default)")
     p.add_argument("--exclude-stim-ms", type=float, default=200.0,
                    help="drop spikes from each pulse to this long after it (stimulation recordings; 0 keeps them)")
