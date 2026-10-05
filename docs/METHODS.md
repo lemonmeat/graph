@@ -6,6 +6,7 @@ This file is written so it can be adapted for the independent work report. Param
 
 - **Hardware.** Extracellular signals were recorded from 3D neuronal cultures on a folded 4×4×4 microelectrode array (3D-MIND design; Kumar et al., 2026) connected to an MCS MEA2100-Mini system.
 - **Channels.** 59 electrodes plus one reference (electrode 15). Of the 64 grid positions, 5 have no recorded electrode.
+- **Geometry.** Electrodes are 30 µm gold discs on four stacked layers separated by 250 µm (Kumar et al., 2026); layer 1 is the bottom. Positions are given as (row, column, layer). The in-layer electrode pitch was not available, so distances within a layer are placeholders and no analysis interprets them physically.
 - **Sampling.** 10 kHz, 24-bit (8.67 nV per bit, ±72.7 mV range).
 - **Data used.** Raw, unfiltered data was saved by Multi Channel Experimenter in MCS HDF5 format. All analysis starts from the raw stream; filtering in the acquisition software was not used (DECISIONS.md D2).
 - **Software.** Data were read and processed with SpikeInterface (Buccino et al., 2020). The electrode geometry was represented as a ProbeInterface probe (Garcia et al., 2022). See `meagraph.io` and `meagraph.probe`.
@@ -116,6 +117,10 @@ CFP (le Feber et al., 2007) is the probability that electrode j fires in the 1 m
 
 **What CFP measures.** Shared network bursts are part of the CFP, so co-bursting pairs are related even without a synapse. CFP describes functional coupling at the timescale of network bursts, which is how it is used in studies of stimulation-induced change (le Feber et al., 2010), not monosynaptic connectivity.
 
+### Two-Gaussian correlogram weight (comparison with earlier analyses)
+
+To compare with the lab's earlier analyses (Kumar et al., 2026), the cross-correlogram (2 ms bins, ±100 ms) of each pair was also fitted with a sum of two Gaussians, a1·exp(−(x − b1)²/2c1²) + a2·exp(−(x − b2)²/2c2²), and the connection weight was (a1 + a2)/(c1 + c2). The net direction was taken from the side of zero on which the fitted curve peaks. As in the original analysis, no significance test was applied. The correlogram normalization and lag range of the original analysis were not reported; the values used here are assumptions (DECISIONS.md D23).
+
 ### Multiple comparisons and burst control
 
 **Multiple comparisons.** p-values were corrected with the Benjamini–Hochberg procedure (Benjamini & Hochberg, 1995) at a false discovery rate of 5 %:
@@ -206,6 +211,8 @@ CFP (le Feber et al., 2007) is the probability that electrode j fires in the 1 m
 
 Null networks (mean false edges per network): `tspe` 1, 0 and 0 (no bursts, bursts, stimulation); `cfp` 0, **202 (84 %)** and 0.3; `cfp_narrow` 1, **214 (89 %)** and 19 (8 %).
 
+**Two-Gaussian weight** (`cch_gauss2`, no significance test): recall 0.81–0.89 at every recording length; precision 0.18; ROC area of the weight 0.84–0.86 (vs 0.99 for `cch_jitter`); delay error 0.3–0.6 ms. In null networks it reported an edge for about half of all ordered pairs (one net direction per pair): 49 % without bursts, 48 % with bursts, 35 % with stimulation.
+
 **Inhibition** (TSPE, all spikes; 18 inhibitory connections per scenario over 3 seeds):
 
 | Scenario | Inhibitory found | False inhibitory (of which reverse artefact) | With the reverse rule: found / false |
@@ -232,6 +239,7 @@ Ranking inhibitory pairs by p-value (ROC area, 0.5 = chance): TSPE 0.54–0.81, 
 9. **Most of TSPE's inhibitory calls are its reverse artefact:** 56 of 64 false inhibitory edges were the opposite direction of an excitatory connection. Dropping inhibitory edges that oppose a significant excitatory edge removes all 56, at the cost of 3 of the 4 true inhibitory edges found.
 10. **CFP measures co-bursting, not synapses.** With the published width rule it found no monosynaptic connection, yet marked 84 % of unconnected pairs in burst networks. Without the rule it finds connections (recall comparable to `cch_jitter`) but with precision 0.79, and only after burst periods are removed. CFP is suited to tracking burst-scale functional change (Phase 6), not to mapping connections.
 11. **The burst detector over-detects at high rates.** In the 2–10 Hz network, ISI_N (10 pooled spikes within 100 ms) marked much of the recording as bursts, so the burst-removed analyses lost most of their spikes (`cch_jitter` recall 1.00 → 0.45). Its thresholds should scale with the network's firing rate (D15).
+12. **The earlier lab weight ranks pairs but cannot decide which are connected.** Without a test, about half of all pairs, connected or not, receive a directed edge. Its weight orders true connections above the rest less reliably than the jitter test's p-value (ROC area 0.85 vs 0.99), partly because the model has no baseline term and the second Gaussian's width absorbs the flat background. It is useful for comparing weights of the same pair across days, as in the original study, not for deciding whether a connection exists.
 
 **Limitations of the validation.** The simulated network is linear apart from the suppression windows, keeps excitatory delays inside the test window, and models inhibition as spike deletion rather than conductance. Its bursts are rate surges rather than propagating network events. Real data can violate each of these assumptions.
 

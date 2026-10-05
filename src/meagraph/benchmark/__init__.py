@@ -38,7 +38,10 @@ def roc_auc(scores: np.ndarray, labels: np.ndarray) -> float:
     return float((ranks[labels].sum() - pos * (pos + 1) / 2) / (pos * neg))
 
 
-def _auc(p: np.ndarray | None, truth: np.ndarray, tested: np.ndarray) -> float:
+def _auc(p: np.ndarray | None, truth: np.ndarray, tested: np.ndarray, ranking: np.ndarray | None = None) -> float:
+    """ROC area from p-values, or from ``ranking`` (higher = stronger) for methods without a test."""
+    if ranking is not None:
+        return roc_auc(ranking[tested], truth[tested])
     if p is None:
         return float("nan")
     return roc_auc(-np.log10(np.clip(p[tested], 1e-300, 1)), truth[tested])
@@ -74,7 +77,7 @@ def score(result: ConnectivityResult, truth: SyntheticNetwork, significant: np.n
         precision_functional=(tp + fp_indirect) / (tp + fp) if tp + fp else float("nan"),
         recall=tp / (tp + fn) if tp + fn else float("nan"),
         false_positive_rate=fp / (fp + tn) if fp + tn else float("nan"),
-        auc=_auc(p_exc, true_exc, tested),
+        auc=_auc(p_exc, true_exc, tested, result.extra.get("ranking")),
     )  # fmt: skip
     hit = exc_call & truth.excitatory & tested
     out["delay_error_ms"] = float(np.nanmedian(np.abs(result.delays_ms[hit] - truth.delays_ms[hit]))) if result.directed and hit.any() else float("nan")

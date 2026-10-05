@@ -79,3 +79,26 @@ def test_signed_graphs_record_edge_type(tmp_path, inhibitory_network):
     assert back.signed
     types = {d["type"] for _, _, d in nx.read_graphml(tmp_path / "g" / "graph.graphml").edges(data=True)}
     assert types <= {"excitatory", "inhibitory"} and "excitatory" in types
+
+
+# -- cch_gauss2 (Kumar et al. 2026, D23) ----------------------------------------------------- #
+def test_gauss2_fit_recovers_parameters_and_the_paper_weight():
+    from meagraph.connectivity.gauss2 import fit_gauss2, gauss2
+
+    x = np.arange(-99, 100, 2.0)
+    truth = [30, 4.0, 3.0, 10, -5.0, 40.0]
+    p = fit_gauss2(gauss2(x, *truth) + np.random.default_rng(0).normal(0, 0.3, x.size), x, 2.0)
+    np.testing.assert_allclose(p, truth, rtol=0.05, atol=0.3)
+    assert (p[0] + p[3]) / (p[2] + p[5]) == pytest.approx(40 / 43, rel=0.02)
+
+
+def test_gauss2_net_direction_and_storage(tmp_path):
+    net = simulate_network(NetworkConfig(duration_s=600, n_units=8, connection_prob=0.2, weight=(0.2, 0.2), seed=3))
+    r = estimate(net.trains, "cch_gauss2")
+    assert np.isnan(r.p_values).all() and r.tested.sum() == 8 * 7  # no test, but every pair was fitted
+    hit = r.significant & net.excitatory
+    assert hit.sum() >= 0.9 * net.excitatory.sum()  # the weight goes to the source -> target direction
+    assert not (r.significant & r.significant.T).any()  # one net direction per pair
+    assert score(r, net)["auc"] > 0.9  # ranked by weight, since there are no p-values
+    back = load_result(save_result(r, tmp_path / "g"))
+    np.testing.assert_array_equal(back.tested, r.tested)

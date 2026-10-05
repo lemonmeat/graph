@@ -22,7 +22,7 @@ Each layer imports only from layers below it. There are no cycles.
                  │
  graphs        connectivity.pipeline  (detection result → burst-controlled graphs, GraphConfig)
                  │            │
- estimators      │      connectivity  (cch_hollow, cch_jitter, sttc, tspe, cfp; ConnectivityResult; graph files)
+ estimators      │      connectivity  (cch_hollow, cch_jitter, sttc, tspe, cfp, cch_gauss2; ConnectivityResult; graph files)
                  │            │         depends only on SpikeTrains: any spike source can feed it
  detection     detect   (threshold detection, QC, network bursts, result folders)
                  │
@@ -91,7 +91,7 @@ Every config is a frozen pydantic model next to the step that uses it, saved as 
 | `preprocess` | `InterpolateWindowsRecording` (D9) and the `detection_band` chain. |
 | `stimulation` | Fixed and per-pulse blanking windows, `measure_recovery`, `infer_site`, `audit_stimulation`, `stimulation_periods`. |
 | `detect` | `DetectionConfig`, `detect_spikes`, polarity QC (D10), noise, network bursts (D15), result folders. |
-| `connectivity` | Estimator registry and `estimate`, `cch_hollow`, `cch_jitter`, `sttc`, `tspe` (signed: excitatory and inhibitory, via Elephant), `cfp`, surrogates and fitted p-values (D17), FDR, graph files. `pipeline.py` connects it to detection results. |
+| `connectivity` | Estimator registry and `estimate`, `cch_hollow`, `cch_jitter`, `sttc`, `tspe` (signed: excitatory and inhibitory, via Elephant), `cfp`, `cch_gauss2` (Kumar et al. 2026 weight, no test), surrogates and fitted p-values (D17), FDR, graph files. `pipeline.py` connects it to detection results. |
 | `synth` | Hawkes network with known connections, optional inhibitory units (D22) and optional confounds (D16). |
 | `benchmark` | Scenarios, scoring (including indirect false positives), parallel runner. |
 | `viz` | Plotting functions: data and an optional `ax` in, artists out, no file I/O. `plot_connectivity` is the `meagraph plot` figure. |

@@ -1,10 +1,10 @@
 """Connectivity estimators sharing one interface, plus significance tools and graph output.
 
     from meagraph.connectivity import estimate
-    result = estimate(trains, "cch_jitter")          # or "cch_hollow", "sttc", "tspe", "cfp"
+    result = estimate(trains, "cch_jitter")          # or "cch_hollow", "sttc", "tspe", "cfp", "cch_gauss2"
 """
 
-from meagraph.connectivity import cch, cfp, sttc, tspe  # noqa: F401  (registers the estimators)
+from meagraph.connectivity import cch, cfp, gauss2, sttc, tspe  # noqa: F401  (registers the estimators)
 from meagraph.connectivity.base import ESTIMATORS, ConnectivityResult, estimate, register
 from meagraph.connectivity.graph import load_result, save_result, to_networkx
 from meagraph.connectivity.stats import cross_correlograms, fdr_mask, interval_jitter, window_counts

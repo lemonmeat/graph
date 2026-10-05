@@ -32,6 +32,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **Phase 4.5 done** (2026-10-05, D22 Proposed): `tspe` (Elephant TSPE + jitter significance; signed, detects inhibition) and `cfp` (conditional firing probability, burst-scale); inhibitory units in `synth` (`inhibitory_fraction`, suppression windows, time-ordered cascade); signed scoring, `inhibition_scenarios()` and rule variants (`tspe_noreverse`, `cfp_narrow`) in `benchmark`. `meagraph graph` runs all five methods by default.
   - Elephant TSPE returns (target, source) matrices; meagraph transposes. Its `normalize` option has a delay-indexing bug; not used. A strong excitatory i→j makes j→i score negative (reverse artefact).
   - The published CFP width rule (≥ 5 ms at 80 % of peak) rejects monosynaptic (~1 ms) peaks; CFP delays at the 0.5 ms boundary mean a peak at or before zero lag.
+- **Kumar et al. 2026 comparison** (2026-10-05, D23/D24 Proposed): `cch_gauss2` reproduces the paper's two-Gaussian weight (no test; NeuroExplorer normalization and lag range unknown). Threshold/sorting debate: keep 5σ and no sorting (4σ gives no power gain; 2.7σ is ~96 % noise; waveforms show no separable units at 10 kHz).
 - **Next is Phase 5:** GLM (NeMoS), stimulus-evoked estimator, transfer entropy if practical.
 - Decisions D1–D17 and D21 are Accepted (D11 superseded by D21). D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults), D20 (self-contained result folders) and D22 (TSPE, CFP, inhibition) are Proposed.
 - **Legacy scripts retired** 2026-10-05 (see Existing code below).
@@ -40,9 +41,10 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 
 - **Recording hardware:** MCS MEA2100-Mini with STG stimulator (verified from stream labels). MEA layout string: `ME21Combi60`.
 - **Array:** custom 4x4x4 grid, but **only 60 channels are recorded**. 59 sit on the cube, and label `15` is the reference electrode (owner confirmed). 5 grid cells are empty.
-  - Electrode pitch within a layer: TODO µm.
-  - Layer spacing: TODO µm (the paper reports 25–250 µm spacers).
-  - Electrode diameter: TODO (the paper says 30 µm).
+  - Electrode pitch within a layer: TODO µm (not in Kumar et al. 2026; 100 µm placeholder).
+  - Layer spacing: **250 µm** (Kumar et al. 2026 spacer; owner: use the paper's geometry, 2026-10-05).
+  - Electrode diameter: **30 µm** (Kumar et al. 2026).
+  - Layer 1 is the **bottom** layer (owner, 2026-10-05). Convention stays (row, col, layer); the paper's layer-row-col names are not used.
 - **Channel map:** label → (row, col, layer) is `src/meagraph/probe/data/cube4x4x4_E-00303_map.csv` (formerly `MEA_CUBE` in the legacy `mcs.py`). It encodes the headstage-to-electrode wiring (owner confirmed).
 - **File format:** MCS HDF5, Multi Channel Experimenter 2.21 / DataManager 1.14, protocol RawData v3. Full layout in `docs/DATA_FORMAT.md`.
 - **Sampling rate:** 10 kHz in the current files (`Tick` = 100 µs). Always read it from `InfoChannel.Tick`.
@@ -113,7 +115,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 
 The full list with context is in `docs/PLAN.md` § Open questions.
 
-- **Q1.** Pitch, layer spacing, electrode diameter, layer orientation.
+- **Q1.** In-layer pitch only (layer spacing 250 µm, diameter 30 µm and layer 1 = bottom are settled).
 - **Q2 (remaining part).** Are the 5 empty cells absent, or present but unwired?
 - **Q4.** Planar 60 MEA type and sample files.
 - **Q5.** MCS Filter 1/2/3 and Spike Detector settings.
@@ -126,6 +128,7 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q15.** In stim47, positive QC events are elevated on several channels. Are slow artifact components outlasting the 50 ms QC exclusion? Check in Phase 6.
 - **Q16.** The synaptic window is [1, 4) ms (D14). In DIV142, the 32→14 correlogram peaks at about 6 ms. Should a wider window be used, or a sensitivity analysis run?
 - **Q17.** Accept D18, excluding spikes up to 200 ms after each pulse in spontaneous connectivity?
+- **Q20.** For `cch_gauss2`: which NeuroExplorer normalization and lag range did the original analysis use? Accept D24 (keep 5σ, no sorting; record at 20 kHz in future)?
 - **Q19.** Accept the D22 choices (inhibition model, TSPE significance and reverse rule, CFP test, CFP width rule, CFP boundary-delay rule)?
 - **Q18.** Accept D19? It would make the burst-removed analysis primary, set `drop_symmetric=False`, and make `cch_jitter` the primary method.
 

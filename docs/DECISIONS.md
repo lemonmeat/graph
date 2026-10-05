@@ -132,7 +132,7 @@ This entry must be re-checked whenever the SI version changes.
 
 **Decision.** Until the owner supplies pitch, layer spacing and diameter (Q1), probe specs carry placeholder dimensions with `geometry_verified: false`:
 
-- cube: 100 µm everywhere;
+- cube: 100 µm everywhere; **updated 2026-10-05:** layer spacing 250 µm and sensor diameter 30 µm from Kumar et al. 2026 (same device design; owner confirmed layer 1 is the bottom). The in-layer pitch remains a 100 µm placeholder, so `geometry_verified` stays false;
 - planar: 200 µm, the legacy default.
 
 The flag is enforced in three places:
@@ -507,3 +507,53 @@ From the full benchmark (`docs/METHODS.md` § Validation; `docs/benchmark/benchm
 - (c) Make the ISI_N burst thresholds scale with the pooled firing rate before using burst removal on higher-rate cultures.
 
 **First real-data results (DIV142).** TSPE replicates 78 → 87 (3 ms) and 32 → 14 at its actual peak delay (5–6 ms, see Q16). It adds longer-delay edges, 87 → 14 (15–16 ms) and 87 → 32 (10–11 ms), that replicate in the associative recording; their correlogram peaks are broad, suggesting multi-step paths. No inhibitory edges were found.
+
+---
+
+## D23. Geometry from Kumar et al. 2026, and `cch_gauss2` for comparison with earlier lab analyses
+
+**Status:** Proposed 2026-10-05 (geometry values applied at the owner's instruction; the estimator's open settings await the owner)
+
+**Geometry.** The array is the 3D-MIND design of Kumar et al. 2026, and layer 1 is the bottom (owner). From the paper: sensors are 30 µm discs (radius 15 µm, unchanged), and layers are separated by a 250 µm SU-8 spacer (the fabrication recipe's thickness; the paper quotes a 25–250 µm range in general). The in-layer sensor pitch is **not** in the paper's main text, so the x–y pitch stays a 100 µm placeholder and `geometry_verified` stays false. Positions are stored as (row, col, layer), the project's convention; the paper's layer–row–column sensor names are not used.
+
+**`cch_gauss2`.** Reproduces the paper's connection weight so new results can be checked against the lab's earlier analyses: a cross-correlogram (2 ms bins) fitted with two Gaussians, weight (a1 + a2)/(c1 + c2), net direction from the side of zero where the fitted curve peaks. Like the paper, it has no significance test; `p_values` are NaN and every tested pair with an off-zero peak is an edge (`min_weight` can set a threshold).
+
+**Settings that must match the original NeuroExplorer/MATLAB analysis before weights can be compared numerically** (not stated in the paper):
+
+1. correlogram normalization (here counts per bin; `rate_hz` also available);
+2. lag range (here ±100 ms);
+3. fit bounds and starting values (the MATLAB fit is unbounded; here widths are limited to 10 × the lag span, and three starting points are tried).
+
+**What the implementation showed.** The paper's model has no constant term, so on correlograms with a flat baseline the second Gaussian absorbs the baseline and its width runs to hundreds or thousands of ms; the weight is then dominated by that width. In a simulated 30 min network, 7 of 22 true-connection fits reached the width bound. The weight still ranks true connections above others (median 0.17 vs 0.03 there), and the direction and delay are accurate, but without a test nearly every pair becomes an edge (115 of 120 pairs). Benchmark (96 networks): recall 0.81–0.89, precision 0.18, weight ROC area 0.84–0.86 (`cch_jitter`: 0.99); null networks get an edge on about half of all ordered pairs. Use it to compare a pair's weight across sessions with the lab's earlier numbers, not to decide whether a connection exists.
+
+---
+
+## D24. Spike sorting and a lower detection threshold: not adopted for now
+
+**Status:** Proposed 2026-10-05 (owner asked for the debate; recommendation below)
+
+**Context.** Kumar et al. 2026 thresholded at "4 × (median of the filtered signal)" in NeuroExplorer and spike-sorted. If that median is of |x|, the threshold is about 2.7σ (σ = median|x|/0.6745); meagraph uses 5σ and one train per electrode. The active DIV142 electrodes have σ ≈ 0.9–1.3 µV and spike troughs of 5–13 µV.
+
+**Evidence: threshold** (DIV142 spontaneous, 10 min; "noise fraction" = positive / negative QC events on the active electrodes, the expected share of noise among negative events):
+
+| Threshold | Spikes (all electrodes) | QC-active electrodes | Spikes on active electrodes | Noise fraction | Estimated real spikes | Real / √(all) |
+|---|---|---|---|---|---|---|
+| 5σ (current) | 4,489 | 8 | 3,179 | 0.38 | 1,971 | 35 |
+| 4σ | 20,815 | 8 | 7,747 | 0.59 | 3,176 | 36 |
+| 3.5σ | 88,274 | 7 | 17,408 | 0.80 | 3,482 | 26 |
+| 2.7σ (paper, if median of \|x\|) | 925,576 | 1 | 17,800 | 0.96 | 712 | 5 |
+
+For correlation methods, independent noise spikes add variance without adding signal, so detection power scales roughly with real spikes / √(all spikes). 4σ gains 60 % more real spikes but no power; below 4σ power falls, and at 2.7σ the polarity QC can no longer find active electrodes because noise dominates.
+
+**Evidence: sorting** (5σ waveforms on the 8 active electrodes, 3 ms at 10 kHz = 30 samples): k-means with two clusters on the first 3 principal components gives separations of d' = 2.1–3.0, which is what splitting one Gaussian cloud gives (≈ 2.7); the first component explains only 17–24 % of the variance, so the waveforms are noise-dominated; 63–912 spikes per electrode in 10 min. There is no evidence of separable units.
+
+**Arguments for sorting / a lower threshold:** continuity with the paper; 30 µm sensors in 3D tissue may record several neurons; thresholding and sorting go together (sorting removes the noise clusters a low threshold lets in); more spikes would help the slowest-firing electrodes.
+
+**Arguments against, for these recordings:** the numbers above; 10 kHz sampling (the paper used 20 kHz) gives few samples per waveform; sorting adds operator-dependent choices; the main source of false edges in the benchmark is indirect paths, which sorting does not fix.
+
+**Recommendation.**
+
+1. Keep 5σ and per-electrode trains as the default.
+2. Record at 20 kHz in future sessions (the MEA2100-Mini supports it), and revisit sorting with a SpikeInterface sorter when SNR and spike counts allow; the threshold should then be lowered together with sorting, not alone.
+3. Optionally run 4σ as a sensitivity check on any key result (`DetectionConfig(threshold_sigma=4.0)`).
+4. Check adjacent electrodes for the same neuron recorded twice (zero-lag synchrony, e.g. 78–87) instead of sorting.

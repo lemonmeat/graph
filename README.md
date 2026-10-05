@@ -50,7 +50,8 @@ The full benchmark runs 96 simulated networks (81 excitatory-only, 15 with inhib
   - `cch_hollow`: cross-correlogram against a smoothed baseline;
   - `sttc`: spike time tiling coefficient, undirected;
   - `tspe`: total spiking probability edges, which also reports **inhibitory** edges (negative weight; drawn blue by `meagraph plot`);
-  - `cfp`: conditional firing probability, functional coupling at the timescale of network bursts (0–500 ms).
+  - `cfp`: conditional firing probability, functional coupling at the timescale of network bursts (0–500 ms);
+  - `cch_gauss2`: the two-Gaussian correlogram weight of Kumar et al. 2026, for comparison with the lab's earlier analyses. It has no significance test, so it is not run by default: `meagraph graph data/<file>.h5 --method cch_gauss2`.
 
   In stimulation recordings, spikes from each pulse to 200 ms after it are left out (`--exclude-stim-ms`).
 - `meagraph plot` draws one graph: the electrodes in 3D with an arrow per edge (colour = firing rate), and the cross-correlogram of each edge with the tested window shaded. The correlograms use exactly the spikes the graph was tested on. Choose the graph with `--method cch_hollow` and `--spike-set no_bursts`, or give a graph folder as the path. `--save graph.png` writes an image instead of opening a window. See `docs/METHODS.md` for what an edge means, and what it does not.
@@ -85,7 +86,7 @@ graphs["cch_jitter"].no_bursts.edges()
 
 - **Times** are seconds on the MCS recording clock, the same clock as the stimulation events.
 - **Electrodes** are named by their MCS label (`"47"`). Electrode 15 is the reference and is dropped.
-- **Geometry.** The electrode spacing is a placeholder until the real dimensions are entered in `src/meagraph/probe/data/cube4x4x4_E-00303.yaml`. Grid positions (row, column, layer) are exact.
+- **Geometry.** Layer spacing (250 µm) and electrode diameter (30 µm) come from Kumar et al. 2026. The spacing within a layer is a placeholder until it is entered in `src/meagraph/probe/data/cube4x4x4_E-00303.yaml`. Grid positions (row, column, layer) are exact; layer 1 is the bottom.
 - **Docs:**
   - `docs/DATA_FORMAT.md`: the file format;
   - `docs/METHODS.md`: methods, written for citation;

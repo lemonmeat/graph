@@ -42,7 +42,9 @@ def to_networkx(result: ConnectivityResult, significant_only: bool = True) -> nx
     for i, j in zip(*np.nonzero(keep)):
         if not result.directed and j < i:
             continue
-        attrs = dict(weight=float(result.weights[i, j]), p_value=float(result.p_values[i, j]))
+        attrs = dict(weight=float(result.weights[i, j]))
+        if np.isfinite(result.p_values[i, j]):
+            attrs["p_value"] = float(result.p_values[i, j])
         if result.signed:
             attrs["type"] = "inhibitory" if result.weights[i, j] < 0 else "excitatory"
         if np.isfinite(result.delays_ms[i, j]):
@@ -70,7 +72,7 @@ def save_result(result: ConnectivityResult, folder: str | Path, inputs=(), overw
                         f"{result.p_values[i, j]:.4g}", int(result.significant[i, j])])  # fmt: skip
     np.savez_compressed(
         out / "matrices.npz", node_ids=np.array(result.node_ids), weights=result.weights, delays_ms=result.delays_ms,
-        p_values=result.p_values, significant=result.significant, n_spikes=result.n_spikes,
+        p_values=result.p_values, significant=result.significant, n_spikes=result.n_spikes, tested=result.tested,
         positions_um=result.positions_um if result.positions_um is not None else np.zeros((0, 3)),
     )  # fmt: skip
     (out / "result.json").write_text(json.dumps(dict(method=result.method, directed=result.directed, signed=result.signed, duration_s=result.duration_s, params=result.params)))
@@ -86,4 +88,5 @@ def load_result(folder: str | Path) -> ConnectivityResult:
         method=meta["method"], node_ids=tuple(str(x) for x in z["node_ids"]), weights=z["weights"], delays_ms=z["delays_ms"],
         p_values=z["p_values"], significant=z["significant"], directed=meta["directed"], params=meta["params"],
         n_spikes=z["n_spikes"], duration_s=meta["duration_s"], positions_um=positions, signed=meta.get("signed", False),
+        tested_mask=z["tested"] if "tested" in z.files else None,
     )  # fmt: skip

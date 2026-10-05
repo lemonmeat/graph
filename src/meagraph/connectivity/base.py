@@ -25,6 +25,9 @@ class ConnectivityResult:
 
     ``signed`` results (methods that also detect inhibition) mark both kinds of edge in
     ``significant``; the sign of the weight says which (negative = inhibitory).
+
+    Methods without a significance test (``cch_gauss2``) leave ``p_values`` NaN and give the
+    tested pairs in ``tested_mask`` instead.
     """
 
     method: str
@@ -40,10 +43,11 @@ class ConnectivityResult:
     positions_um: np.ndarray | None = None
     extra: dict = field(default_factory=dict)  # method-specific arrays, e.g. correlograms
     signed: bool = False
+    tested_mask: np.ndarray | None = None
 
     @property
     def tested(self) -> np.ndarray:
-        return ~np.isnan(self.p_values)
+        return self.tested_mask if self.tested_mask is not None else ~np.isnan(self.p_values)
 
     def edges(self) -> list[dict]:
         """Significant edges, strongest first."""
