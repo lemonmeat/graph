@@ -142,6 +142,41 @@ def _benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
+def _plot(args: argparse.Namespace) -> int:
+    try:
+        import matplotlib
+
+        if args.save:
+            matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError as exc:  # matplotlib is an optional extra
+        raise SystemExit(f"plotting needs matplotlib: uv pip install -e '.[viewer]' ({exc})") from exc
+    from meagraph import viz
+    from meagraph.connectivity import cross_correlograms
+    from meagraph.connectivity.pipeline import load_graph
+
+    path = Path(args.path)
+    if path.is_file():  # a recording: its graph folder under results/
+        path = path.parent / "results" / path.stem / f"graph_{args.method}"
+    if not (path / "result.json").exists():
+        path = path / args.spike_set
+    if not (path / "result.json").exists():
+        raise SystemExit(f"no graph at {path}; run `meagraph graph` first")
+    saved = load_graph(path)
+    res = saved.result
+    params = res.params
+    ccg, lags = cross_correlograms(saved.trains, params.get("bin_ms", 0.5), params.get("max_lag_ms", 30.0))
+    recording = path.parent.parent.name
+    fig = viz.plot_connectivity(res, ccg, lags, background_um=saved.detection.trains.positions_um,
+                                title=f"{recording[:60]}\n{path.parent.name}/{path.name}")  # fmt: skip
+    if args.save:
+        fig.savefig(args.save, dpi=130)
+        print(f"saved {args.save}")
+    else:
+        plt.show()
+    return 0
+
+
 def _view(args: argparse.Namespace) -> int:
     try:
         from meagraph.viewer import main as viewer_main
@@ -190,6 +225,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--exclude-stim-ms", type=float, default=200.0,
                    help="drop spikes from each pulse to this long after it (stimulation recordings; 0 keeps them)")
     p.set_defaults(func=_graph)
+
+    p = sub.add_parser("plot", help="draw a saved graph in 3D, with the correlogram of each edge")
+    p.add_argument("path", help="recording (.h5), its graph_<method> folder, or one of all/no_bursts/robust inside it")
+    p.add_argument("--method", default="cch_jitter", help="graph to show when PATH is a recording")
+    p.add_argument("--spike-set", choices=["all", "no_bursts", "robust"], default="all",
+                   help="all spikes, network bursts removed, or edges significant in both")
+    p.add_argument("--save", help="write an image instead of opening a window")
+    p.set_defaults(func=_plot)
 
     p = sub.add_parser("benchmark", help="score the estimators on synthetic networks with known connections")
     p.add_argument("--quick", action="store_true", help="one small scenario per condition (seconds)")

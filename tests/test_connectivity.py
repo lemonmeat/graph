@@ -225,3 +225,33 @@ def test_cli_graph_on_a_detection_folder(tmp_path, capsys):
     # Node positions travel with the spikes from detection.
     res = load_result(graph / "all")
     np.testing.assert_allclose(res.positions_um, net.trains.positions_um)
+
+
+def test_saved_graph_reloads_with_its_tested_spikes_and_plots(tmp_path):
+    from meagraph.cli import main
+    from meagraph.connectivity.pipeline import load_graph
+    from meagraph.detect import DetectionConfig, DetectionResult, save_detection
+    from meagraph.detect.threshold import ChannelQC
+    from meagraph.io.mcs_events import StimEvents
+
+    net = simulate_network(NetworkConfig(duration_s=300, n_units=5, connection_prob=0.3, weight=(0.3, 0.3), seed=5,
+                                         burst_rate_hz=0.2))  # fmt: skip
+    ids = net.trains.unit_ids
+    onsets = np.arange(7.0, 300.0, 7.0)
+    det = DetectionResult(
+        trains=net.trains, amplitudes_uv={u: np.zeros(t.size, np.float32) for u, t in zip(ids, net.trains.times_s)},
+        waveforms_uv={u: np.zeros((t.size, 30), np.float32) for u, t in zip(ids, net.trains.times_s)},
+        noise_uv={u: 1.0 for u in ids}, excluded={}, recovery_ms={}, config=DetectionConfig(),
+        qc=ChannelQC(ids, np.full(len(ids), 100), np.zeros(len(ids), int), np.zeros(len(ids)), np.ones(len(ids), bool)),
+        stim=(StimEvents("STG 1", "Single Pulse", onsets, onsets + 0.001),),
+    )  # fmt: skip
+    folder = save_detection(det, tmp_path / "results" / "rec" / "detect_default")
+    assert main(["graph", str(folder), "--method", "cch_hollow"]) == 0
+    graph = tmp_path / "results" / "rec" / "graph_cch_hollow"
+    for sub in ("all", "no_bursts"):
+        saved = load_graph(graph / sub)
+        again = estimate(saved.trains, "cch_hollow", saved.result.params)
+        np.testing.assert_array_equal(again.p_values, saved.result.p_values)  # same spikes as when it was tested
+    out = tmp_path / "graph.png"
+    assert main(["plot", str(graph), "--spike-set", "no_bursts", "--save", str(out)]) == 0
+    assert out.stat().st_size > 10_000

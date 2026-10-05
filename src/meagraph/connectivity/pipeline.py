@@ -6,17 +6,20 @@ significant in both are *robust*: they are not explained by the shared firing in
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import yaml
 from pydantic import BaseModel, ConfigDict, NonNegativeFloat
 
 from meagraph.connectivity.base import ConnectivityResult, estimate
-from meagraph.connectivity.graph import save_result
+from meagraph.connectivity.graph import load_result, save_result
 from meagraph.detect.bursts import BurstConfig, network_bursts
+from meagraph.detect.store import load_detection
 from meagraph.detect.threshold import DetectionResult
 from meagraph.spiketrains import SpikeTrains
 from meagraph.stimulation.artifacts import stimulation_periods
@@ -70,11 +73,43 @@ def graphs_from_detection(
     cfg = config or GraphConfig()
     usable = [c for c in detection.trains.unit_ids if c not in detection.excluded]
     chosen = list(detection.active_channels) if cfg.channels == "active" else usable
-    base = detection.trains
-    if detection.stim and cfg.exclude_stim_post_ms > 0:
-        base = base.without_periods(stimulation_periods(detection.stim, cfg.exclude_stim_pre_ms, cfg.exclude_stim_post_ms))
+    base = analysed_trains(detection, cfg)
     periods = network_bursts(base.select(usable), cfg.bursts)
     return {m: burst_controlled(base.select(chosen), m, bursts=periods) for m in methods}
+
+
+def analysed_trains(detection: DetectionResult, config: GraphConfig) -> SpikeTrains:
+    """The detection's spikes with stimulation periods removed, as the graphs see them."""
+    if detection.stim and config.exclude_stim_post_ms > 0:
+        periods = stimulation_periods(detection.stim, config.exclude_stim_pre_ms, config.exclude_stim_post_ms)
+        return detection.trains.without_periods(periods)
+    return detection.trains
+
+
+@dataclass(frozen=True, eq=False)
+class SavedGraph:
+    result: ConnectivityResult
+    trains: SpikeTrains  # exactly the spikes the result was tested on: its nodes, same order
+    detection: DetectionResult
+
+
+def load_graph(folder: str | Path) -> SavedGraph:
+    """A saved graph with the spikes it was tested on, e.g. to redraw its correlograms.
+
+    ``folder`` is ``results/<recording>/graph_<method>/<all|no_bursts|robust>``. The detection
+    folder is found by name next to ``graph_<method>``, so results can be moved as a whole.
+    """
+    folder = Path(folder)
+    meta = yaml.safe_load((folder / "config.yaml").read_text())
+    if not meta.get("pipeline"):
+        raise ValueError(f"{folder} has no pipeline settings (written by an older meagraph); re-run `meagraph graph`")
+    prov = json.loads((folder / "provenance.json").read_text())
+    detection = load_detection(folder.parent.parent / Path(prov["inputs"][0]["path"]).parent.name)
+    trains = analysed_trains(detection, GraphConfig(**meta["pipeline"]))
+    if folder.name == "no_bursts":
+        trains = trains.without_periods(np.loadtxt(folder.parent / "network_bursts.csv", delimiter=",", skiprows=1, ndmin=2))
+    result = load_result(folder)
+    return SavedGraph(result, trains.select(list(result.node_ids)), detection)
 
 
 def save_burst_controlled(bc: BurstControlled, folder: str | Path, config: GraphConfig | None = None,

@@ -157,7 +157,75 @@ def plot_ccg(counts: np.ndarray, lag_edges_ms: np.ndarray, *, window_ms: tuple[f
     return ax
 
 
+def plot_graph_3d(positions_um: np.ndarray, node_ids: Sequence[str], edges: Sequence[tuple[int, int]], *,
+                  directed: bool = True, values: np.ndarray | None = None, background_um: np.ndarray | None = None,
+                  ax=None):  # fmt: skip
+    """Nodes at their 3D positions, coloured by ``values`` (e.g. firing rate), with ``edges``
+    as (source index, target index) arrows (lines if undirected). ``background_um`` draws the
+    other electrodes faintly, for context. Works for any probe; planar probes have z = 0."""
+    ax = _ax(ax, projection="3d")
+    pos = np.asarray(positions_um, dtype=np.float64)
+    if background_um is not None and len(background_um):
+        bg = np.asarray(background_um, dtype=np.float64)
+        ax.scatter(bg[:, 0], bg[:, 1], bg[:, 2], s=10, color=GRID, depthshade=False)
+    vals = np.zeros(len(pos)) if values is None else np.asarray(values, dtype=np.float64)
+    sc = ax.scatter(pos[:, 0], pos[:, 1], pos[:, 2], c=vals, s=110, cmap="Blues", vmin=0,
+                    vmax=max(float(np.max(vals, initial=0)), 1e-9), edgecolors=INK, linewidths=1.2, depthshade=False)  # fmt: skip
+    span = np.ptp(np.vstack([pos, background_um]) if background_um is not None and len(background_um) else pos, axis=0)
+    lift = 0.06 * max(float(span.max()), 1.0)
+    for k, label in enumerate(node_ids):
+        ax.text(pos[k, 0], pos[k, 1], pos[k, 2] + lift, str(label), fontsize=8, color=INK)
+    for i, j in edges:
+        d = pos[j] - pos[i]
+        if directed:
+            ax.quiver(*pos[i], *d, color=WARM, linewidth=2, arrow_length_ratio=0.12)
+        else:
+            ax.plot(*np.column_stack([pos[i], pos[j]]), color=WARM, linewidth=2)
+    ax.set_xlabel("x (µm)")
+    ax.set_ylabel("y (µm)")
+    ax.set_zlabel("z (µm)")
+    ax.set_box_aspect(np.maximum(span, 0.15 * max(float(span.max()), 1.0)))
+    ax.view_init(elev=20, azim=-60)
+    return sc
+
+
+def plot_connectivity(result, ccg: np.ndarray | None = None, lag_edges_ms: np.ndarray | None = None, *,
+                      background_um: np.ndarray | None = None, max_ccgs: int = 6, title: str = "", fig=None):  # fmt: skip
+    """Overview figure of one :class:`~meagraph.connectivity.ConnectivityResult`: the graph in 3D,
+    and the correlogram of each significant edge (strongest first, at most ``max_ccgs``).
+    ``ccg`` is ``(n, n, bins)`` source→target, as from ``meagraph.connectivity.cross_correlograms``.
+    """
+    import matplotlib.pyplot as plt
+
+    edges = result.edges()
+    index = {u: k for k, u in enumerate(result.node_ids)}
+    pairs = [(index[e["source"]], index[e["target"]]) for e in edges]
+    shown = edges[:max_ccgs] if ccg is not None else []
+    n_cols = 1 + min(len(shown), 3)
+    n_rows = 2 if len(shown) > 3 else 1
+    fig = fig or plt.figure(figsize=(4.6 + 3.4 * (n_cols - 1), 4.2 * n_rows))
+    grid = fig.add_gridspec(n_rows, n_cols, width_ratios=[1.4] + [1] * (n_cols - 1))
+    ax = fig.add_subplot(grid[:, 0], projection="3d")
+    if result.positions_um is None:
+        ax.text2D(0.5, 0.5, "no electrode positions saved", ha="center", transform=ax.transAxes)
+    else:
+        plot_graph_3d(result.positions_um, result.node_ids, pairs, directed=result.directed,
+                      values=result.n_spikes / result.duration_s, background_um=background_um, ax=ax)  # fmt: skip
+    more = f" (correlograms: strongest {len(shown)})" if len(edges) > len(shown) > 0 else ""
+    ax.set_title(f"{title}\n{result.method}: {len(edges)} edge(s){more}; colour = rate", fontsize=9)
+    window = result.params.get("window_ms")
+    for k, e in enumerate(shown):
+        a = fig.add_subplot(grid[k // 3, 1 + k % 3])
+        i, j = index[e["source"]], index[e["target"]]
+        plot_ccg(ccg[i, j], lag_edges_ms, window_ms=tuple(window) if window else None, ax=a)
+        arrow = "→" if result.directed else "–"
+        delay = f", delay {e['delay_ms']:.2f} ms" if np.isfinite(e["delay_ms"]) else ""
+        a.set_title(f"{e['source']} {arrow} {e['target']}{delay}, p {e['p_value']:.1g}", fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
 __all__ = [
     "ACCENT", "GRID", "INK", "MUTED", "STIM_COLORS", "WARM",
-    "plot_ccg", "plot_cube_map", "plot_raster", "plot_trace", "plot_waveforms",
+    "plot_ccg", "plot_connectivity", "plot_cube_map", "plot_graph_3d", "plot_raster", "plot_trace", "plot_waveforms",
 ]  # fmt: skip

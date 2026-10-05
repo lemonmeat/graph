@@ -27,6 +27,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - Shared helpers: `meagraph.intervals`, `SpikeTrains.without_periods`, `StimEvents.ends_s`, `stimulation.stimulation_periods`, `probe.DEFAULT_PROBE`, `ProbeSpec.positions_xyz_um`.
   - `tests/test_architecture.py` guards the layering (no matplotlib in the core; estimators independent of io/detect).
   - Pending owner OK (file deletions were blocked): turn `benchmark/` and `viz/` packages into single modules, delete the empty `realtime/` and `reservoir/` stubs, move `SessionConfig` from `config/models.py` into `io/session.py`.
+- **`meagraph plot`** (2026-10-05) draws a saved graph in 3D with each edge's correlogram; `connectivity.pipeline.load_graph` returns a graph with the exact spikes it was tested on.
 - **Next is Phase 5:** more methods, namely GLM, stimulus-evoked, CFP, and possibly Elephant's TSPE (`elephant.functional_connectivity.total_spiking_probability_edges`).
 - Decisions D1–D17 are Accepted. D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults) and D20 (self-contained result folders) are Proposed.
 - **Legacy scripts retired** 2026-10-05 (see Existing code below).

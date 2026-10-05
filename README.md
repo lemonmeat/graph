@@ -24,6 +24,7 @@ meagraph info data/recording.h5     # what is in the file: streams, stimulation 
 meagraph audit data/recording.h5    # stimulation: pulse structure, stimulated site, artifact recovery per channel
 meagraph detect data/recording.h5 --stim-site 47   # spikes + signal-quality check, saved under data/results/
 meagraph graph data/recording.h5    # connectivity among signal-quality-checked electrodes (needs `detect` first)
+meagraph plot data/recording.h5     # draw a graph in 3D with the correlogram of each edge (needs `graph` first)
 meagraph view data/recording.h5     # interactive viewer (click electrodes in the 3D map)
 meagraph benchmark --n-jobs 4       # score the connectivity methods on simulated networks (see below; --quick: seconds)
 ```
@@ -50,7 +51,8 @@ The full benchmark runs 81 simulated networks: about 1.5 CPU-hours, or roughly 2
   - `cch_hollow`: cross-correlogram against a smoothed baseline;
   - `sttc`: spike time tiling coefficient, undirected.
 
-  In stimulation recordings, spikes from each pulse to 200 ms after it are left out (`--exclude-stim-ms`). See `docs/METHODS.md` for what an edge means, and what it does not.
+  In stimulation recordings, spikes from each pulse to 200 ms after it are left out (`--exclude-stim-ms`).
+- `meagraph plot` draws one graph: the electrodes in 3D with an arrow per edge (colour = firing rate), and the cross-correlogram of each edge with the tested window shaded. The correlograms use exactly the spikes the graph was tested on. Choose the graph with `--method cch_hollow` and `--spike-set no_bursts`, or give a graph folder as the path. `--save graph.png` writes an image instead of opening a window. See `docs/METHODS.md` for what an edge means, and what it does not.
 
 **Viewer controls.** Click an electrode in the 3D map, or a row in the raster, to select it. Click the raster to jump in time. The ←/→ keys step through time. Use the sliders for start and window length, and the radio buttons to switch between raw and filtered streams. `meagraph view file.h5 --save view.png` renders an image instead of opening a window.
 

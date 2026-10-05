@@ -57,6 +57,9 @@ recording.h5 ─► io.load_session ─► Session
                      │
                      ▼
                save_burst_controlled ─► results/<recording>/graph_<method>/{all,no_bursts,robust}/
+                     │
+                     ▼
+               load_graph ─► viz.plot_connectivity            (meagraph plot)
 
 synth.simulate_network ─► SpikeTrains with known W ─► benchmark.run_benchmark ─► scores per method
 ```
@@ -72,7 +75,7 @@ synth.simulate_network ─► SpikeTrains with known W ─► benchmark.run_benc
 | `DetectionConfig` / `DetectionResult` | `detect.threshold` | Every detection parameter; spikes, waveforms, noise, QC, excluded channels, recovery times and the stimulation events. |
 | `BurstConfig` | `detect.bursts` | ISI_N network-burst parameters. |
 | `ConnectivityResult` | `connectivity.base` | Weight, delay, p-value and significance matrices (source row, target column) for one method. NaN marks untested pairs. |
-| `GraphConfig` / `BurstControlled` | `connectivity.pipeline` | How detection becomes graphs (channels, stimulation exclusion, bursts); the three graph versions. |
+| `GraphConfig` / `BurstControlled` / `SavedGraph` | `connectivity.pipeline` | How detection becomes graphs (channels, stimulation exclusion, bursts); the three graph versions; a reloaded graph with the exact spikes it was tested on (`load_graph`). |
 | `NetworkConfig` / `SyntheticNetwork` | `synth.hawkes` | A simulated network and its ground truth. |
 
 Every config is a frozen pydantic model next to the step that uses it, saved as `config.yaml` in that step's output folder. `config.SessionConfig` is the one exception for historical reasons.
@@ -91,9 +94,9 @@ Every config is a frozen pydantic model next to the step that uses it, saved as 
 | `connectivity` | Estimator registry and `estimate`, `cch_hollow`, `cch_jitter`, `sttc`, surrogates and fitted p-values (D17), FDR, graph files. `pipeline.py` connects it to detection results. |
 | `synth` | Linear Hawkes network with known connections and optional confounds (D16). |
 | `benchmark` | Scenarios, scoring (including indirect false positives), parallel runner. |
-| `viz` | Plotting functions: data and an optional `ax` in, artists out, no file I/O. |
+| `viz` | Plotting functions: data and an optional `ax` in, artists out, no file I/O. `plot_connectivity` is the `meagraph plot` figure. |
 | `viewer` | Interactive viewer (D12), `meagraph view`. Nothing else imports it. |
-| `cli` | `info`, `probes`, `audit`, `detect`, `graph`, `benchmark`, `view`. Each command is a thin wrapper over library calls. |
+| `cli` | `info`, `probes`, `audit`, `detect`, `graph`, `plot`, `benchmark`, `view`. Each command is a thin wrapper over library calls. |
 | `realtime`, `reservoir` | Empty placeholders for Phase 7. |
 
 ## Output folders
