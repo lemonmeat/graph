@@ -225,7 +225,8 @@ def plot_connectivity(result, ccg: np.ndarray | None = None, lag_edges_ms: np.nd
         arrow = "→" if result.directed else "–"
         delay = f", delay {e['delay_ms']:.2f} ms" if np.isfinite(e["delay_ms"]) else ""
         kind = (" inhibitory" if e["weight"] < 0 else " excitatory") if result.signed else ""
-        a.set_title(f"{e['source']} {arrow} {e['target']}{kind}{delay}, p {e['p_value']:.1g}", fontsize=9)
+        pval = f", p {e['p_value']:.1g}" if np.isfinite(e["p_value"]) else f", weight {e['weight']:.3g}"
+        a.set_title(f"{e['source']} {arrow} {e['target']}{kind}{delay}{pval}", fontsize=9)
     fig.tight_layout()
     return fig
 
