@@ -441,3 +441,21 @@ From the full benchmark (`docs/METHODS.md` § Validation; `docs/benchmark/benchm
 2. **Set `cch_hollow`'s `drop_symmetric` default to False.** The legacy common-input rule removed 6 of 12 reciprocal connections, while all 119 one-way connections were found. Common input is better handled by model-based methods (Phase 5 GLM).
 3. **Use `cch_jitter` as the primary method,** with `cch_hollow` and `sttc` as supporting evidence. `cch_jitter` has the highest precision (0.94–0.97), a delay for every edge, and 0 false edges in every null scenario. STTC must never be applied to stimulation periods (52 % false edges under shared drive).
 4. **Recording length (for experiment design).** About 30 min of spontaneous activity recovers about 95 % of connections at transmission probability 0.03. 10 min recovers about 72 %.
+
+---
+
+## D20. Saved results are self-contained; the graph step reads only the detection folder
+
+**Status:** Proposed 2026-10-05 (structural cleanup before Phase 5; no effect on spikes or edges)
+
+**What changed.**
+
+- `DetectionResult` carries the stimulation events it blanked (with their sites) and the electrode positions of the session's probe. The detection folder stores them in `stimulation.csv` and in `x_um`, `y_um`, `z_um` columns of `channels.csv`.
+- `meagraph graph` takes stimulation times and node positions from the detection folder. Its `--probe` option is gone. Given a recording or its detection folder, it now does the same thing; before, a folder silently skipped the stimulation exclusion (D18).
+- The graph settings (channels, stimulation exclusion, burst parameters) are a typed `GraphConfig`, recorded in each graph folder's `config.yaml`. The provenance lists the `spikes.npz` the graph came from.
+
+**Why.** The probe could be given differently at detection and graph time, and graph folders did not record the stimulation exclusion or channel choice. The Phase 5 stimulus-evoked estimator and the Phase 6 plasticity comparisons need spikes and stimulation times together. Reading them from one folder avoids reopening multi-GB files.
+
+**Evidence.** Re-running detection and graphs on all five recordings gave the same spikes, QC and edges as before the change.
+
+**Cost.** Detection folders written before this change lack `stimulation.csv`. `load_detection` refuses them with a message to re-run `meagraph detect`.

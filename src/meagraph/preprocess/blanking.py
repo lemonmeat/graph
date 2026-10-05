@@ -14,20 +14,12 @@ from numpy.typing import ArrayLike
 from spikeinterface.core import BaseRecording
 from spikeinterface.preprocessing.basepreprocessor import BasePreprocessor, BasePreprocessorSegment
 
+from meagraph.intervals import merge_intervals
+
 
 def merge_windows(windows: ArrayLike, n_samples: int) -> np.ndarray:
     """Clip ``[start, stop)`` sample windows to the recording, sort them, merge overlapping or touching ones."""
-    w = np.asarray(windows, dtype=np.int64).reshape(-1, 2)
-    w = np.clip(w, 0, n_samples)
-    w = w[w[:, 1] > w[:, 0]]
-    w = w[np.argsort(w[:, 0], kind="stable")]
-    merged: list[list[int]] = []
-    for lo, hi in w:
-        if merged and lo <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], int(hi))
-        else:
-            merged.append([int(lo), int(hi)])
-    return np.array(merged, dtype=np.int64).reshape(-1, 2)
+    return merge_intervals(np.clip(np.asarray(windows, dtype=np.int64).reshape(-1, 2), 0, n_samples))
 
 
 class InterpolateWindowsRecording(BasePreprocessor):

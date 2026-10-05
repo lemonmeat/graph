@@ -1,6 +1,8 @@
-"""Stimulation artifacts: blanking windows, per-channel recovery, stimulated-site inference.
+"""Stimulation artifacts: blanking windows, per-channel recovery, stimulated-site inference,
+and the periods that spontaneous-activity analyses exclude.
 
-All windows are ``[start, stop)`` sample indices from the recording's first sample.
+Blanking windows are ``[start, stop)`` sample indices from the recording's first sample;
+:func:`stimulation_periods` is in seconds on the recording clock.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 from spikeinterface.core import BaseRecording
 
+from meagraph.intervals import merge_intervals
 from meagraph.io.mcs_events import StimEvents
 from meagraph.preprocess import detection_band, merge_windows
 
@@ -35,7 +38,7 @@ def pulse_windows(recording: BaseRecording, stim: StimEvents, pre_ms: float, pos
     Returns ``(n_pulses, 2)`` for a scalar ``post_ms`` and ``(n_channels, n_pulses, 2)`` otherwise.
     """
     fs = recording.get_sampling_frequency()
-    offsets = stim.offsets_s if stim.offsets_s is not None else stim.onsets_s
+    offsets = stim.ends_s
     a = np.round(_to_samples(stim.onsets_s, recording) - pre_ms * 1e-3 * fs).astype(np.int64)
     end = _to_samples(offsets, recording)
     post = np.asarray(post_ms, dtype=np.float64)
@@ -43,6 +46,16 @@ def pulse_windows(recording: BaseRecording, stim: StimEvents, pre_ms: float, pos
         return np.column_stack([a, np.round(end + post * 1e-3 * fs).astype(np.int64)])
     b = np.round(end[None, :] + post[:, None] * 1e-3 * fs).astype(np.int64)
     return np.stack([np.broadcast_to(a, b.shape), b], axis=-1)
+
+
+def stimulation_periods(stim: Sequence[StimEvents], pre_ms: float = 1.0, post_ms: float = 200.0) -> np.ndarray:
+    """``[onset - pre, offset + post]`` around every pulse of every output, in s, merged.
+
+    Spontaneous-activity analyses leave these out: shared, time-locked drive makes unconnected
+    pairs correlate (benchmark scenario "stim null"; DECISIONS.md D18).
+    """
+    rows = [np.column_stack([s.onsets_s - pre_ms / 1e3, s.ends_s + post_ms / 1e3]) for s in stim]
+    return merge_intervals(np.concatenate(rows)) if rows else np.zeros((0, 2))
 
 
 @dataclass(frozen=True, eq=False)
@@ -91,7 +104,7 @@ def measure_recovery(
     fs = recording.get_sampling_frequency()
     n = recording.get_num_samples()
     filt = detection_band(recording, pulse_windows(recording, stim, pre_ms, min_post_ms), band_hz, filter_order)
-    offsets = stim.offsets_s if stim.offsets_s is not None else stim.onsets_s
+    offsets = stim.ends_s
     next_onset = np.append(stim.onsets_s[1:], np.inf)
     isolated = next_onset - offsets > max_post_ms * 1e-3
     post = int(round(max_post_ms * 1e-3 * fs))
@@ -142,7 +155,7 @@ def infer_site(recording: BaseRecording, stim: StimEvents, n_trials: int = 40, r
     is None and ``reason`` says why.
     """
     fs = recording.get_sampling_frequency()
-    offsets = stim.offsets_s if stim.offsets_s is not None else stim.onsets_s
+    offsets = stim.ends_s
     keep = np.flatnonzero(stim.onsets_s - recording.get_start_time() > 0.002)[:n_trials]
     ids = [str(c) for c in recording.channel_ids]
     if keep.size == 0:

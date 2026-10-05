@@ -22,10 +22,11 @@ from meagraph.connectivity.base import ConnectivityResult
 
 
 class _Params(BaseModel):
-    """Wrapper so any estimator's params land in config.yaml."""
+    """What config.yaml records: the estimator's params and, from the pipeline, how its input was chosen."""
 
     method: str
     params: dict
+    pipeline: dict | None = None
 
 
 def to_networkx(result: ConnectivityResult, significant_only: bool = True) -> nx.Graph:
@@ -48,8 +49,12 @@ def to_networkx(result: ConnectivityResult, significant_only: bool = True) -> nx
     return g
 
 
-def save_result(result: ConnectivityResult, folder: str | Path, inputs=(), overwrite: bool = False) -> Path:
-    out = write_run_folder(folder, _Params(method=result.method, params=result.params), inputs=inputs, overwrite=overwrite)
+def save_result(result: ConnectivityResult, folder: str | Path, inputs=(), overwrite: bool = False,
+                pipeline: BaseModel | None = None) -> Path:  # fmt: skip
+    """Write the files listed in the module docstring. ``pipeline`` (e.g. a ``GraphConfig``) is
+    recorded in config.yaml next to the estimator's params."""
+    params = _Params(method=result.method, params=result.params, pipeline=pipeline.model_dump(mode="json") if pipeline else None)
+    out = write_run_folder(folder, params, inputs=inputs, overwrite=overwrite)
     g = to_networkx(result)
     nx.write_graphml(g, out / "graph.graphml")
     (out / "graph.json").write_text(json.dumps(nx.node_link_data(g, edges="edges"), indent=1))

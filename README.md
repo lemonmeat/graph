@@ -33,16 +33,19 @@ The full benchmark runs 81 simulated networks: about 1.5 CPU-hours, or roughly 2
 - `--stim-site` names the electrode that was stimulated, because MCS files do not record it. With two stimulator outputs, use `--stim-site "STG 1=47" --stim-site "STG 2=82"`.
 - `meagraph detect` writes `results/<recording>/detect_default/` next to the recording. It contains:
   - `spikes.npz`: spike times, amplitudes and waveforms;
-  - `channels.csv`: per-channel spike rate, noise, quality check and artifact recovery;
+  - `channels.csv`: per-electrode position, spike rate, noise, quality check and artifact recovery;
+  - `stimulation.csv`: every stimulation pulse and its site, if given;
   - `config.yaml`: every parameter;
   - `provenance.json`: code version and input file.
+
+  Later steps read only this folder, never the raw file. Folders written before 2026-10-05 lack `stimulation.csv`; re-run `meagraph detect` for them.
 - `meagraph detect --profile legacy` reproduces the old `spikes.py`.
 - `meagraph graph` writes `results/<recording>/graph_<method>/` with three versions of each graph:
   - `all/`: all spikes;
   - `no_bursts/`: network-burst periods removed;
   - `robust/`: edges significant in both.
 
-  Each holds `graph.graphml` and `graph.json` (nodes with 3D positions), `edges.csv` (every tested pair) and `matrices.npz`. The methods are:
+  Each holds `graph.graphml` and `graph.json` (nodes with 3D positions), `edges.csv` (every tested pair) and `matrices.npz`. Its `config.yaml` records the method's parameters and how the spikes were chosen (channels, stimulation exclusion, burst settings). The methods are:
   - `cch_jitter`: cross-correlogram tested against spike-time jitter;
   - `cch_hollow`: cross-correlogram against a smoothed baseline;
   - `sttc`: spike time tiling coefficient, undirected.
@@ -66,7 +69,14 @@ result.active_channels                           # electrodes that pass the sign
 from meagraph.connectivity import estimate
 graph = estimate(result.trains.select(list(result.active_channels)), "cch_jitter")
 graph.edges()                                    # significant edges: source, target, weight, delay, p
+
+# What `meagraph graph` does: stimulation periods out, then all spikes vs. bursts removed
+from meagraph.connectivity.pipeline import GraphConfig, graphs_from_detection
+graphs = graphs_from_detection(result, ["cch_jitter"], GraphConfig())
+graphs["cch_jitter"].no_bursts.edges()
 ```
+
+`docs/ARCHITECTURE.md` explains how the package is organised.
 
 ## Things to know
 

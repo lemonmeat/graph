@@ -63,6 +63,11 @@ class StimEvents:
     def durations_s(self) -> np.ndarray | None:
         return None if self.offsets_s is None else self.offsets_s - self.onsets_s
 
+    @property
+    def ends_s(self) -> np.ndarray:
+        """Pulse offsets, or the onsets when the file has no Stop events."""
+        return self.onsets_s if self.offsets_s is None else self.offsets_s
+
     def with_site(self, site: str | None) -> StimEvents:
         return replace(self, site=None if site is None else str(site))
 

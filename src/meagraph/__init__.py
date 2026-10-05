@@ -1,7 +1,7 @@
 """meagraph: connectivity, stimulation and reservoir analysis for MEA recordings.
 
 The library has no GUI imports, no global state and no hardcoded paths. Every step takes
-in-memory objects and returns in-memory objects. See docs/PLAN.md for the module map.
+in-memory objects and returns in-memory objects. See docs/ARCHITECTURE.md for the module map.
 """
 
 from importlib.metadata import PackageNotFoundError, version

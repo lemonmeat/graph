@@ -129,6 +129,28 @@ def test_detection_result_roundtrip(tmp_path):
     assert back.active_channels == res.active_channels
     np.testing.assert_allclose(list(back.recovery_ms["STG 1"].values()), list(res.recovery_ms["STG 1"].values()), atol=0.01)
     assert (tmp_path / "det" / "provenance.json").exists() and (tmp_path / "det" / "channels.csv").exists()
+    # The stimulation events travel with the spikes, exactly.
+    (s0,), (s1,) = res.stim, back.stim
+    assert (s1.source, s1.kind, s1.site) == (s0.source, s0.kind, s0.site)
+    np.testing.assert_array_equal(s1.onsets_s, s0.onsets_s)
+    np.testing.assert_array_equal(s1.offsets_s, s0.offsets_s)
+
+
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_detection_folder_keeps_positions_and_rejects_old_format(make_mcs_file, tmp_path):
+    from meagraph.io import load_session
+
+    path, _ = make_mcs_file(labels=("47", "12", "33", "15"), n_samples=20_000)
+    session = load_session(path)
+    res = detect_spikes(session.recording, session.stim)
+    assert res.stim == ()
+    folder = save_detection(res, tmp_path / "det")
+    back = load_detection(folder)
+    np.testing.assert_allclose(back.trains.positions_um, session.recording.get_channel_locations(axes="xyz"), rtol=1e-6)
+    assert back.stim == ()
+    (folder / "stimulation.csv").unlink()
+    with pytest.raises(ValueError, match="re-run `meagraph detect`"):
+        load_detection(folder)
 
 
 # -- stimulation helpers ------------------------------------------------------------------ #

@@ -7,6 +7,7 @@ from meagraph.stimulation.artifacts import (
     infer_site,
     measure_recovery,
     pulse_windows,
+    stimulation_periods,
 )
 from meagraph.stimulation.audit import StimAudit, audit_stimulation, format_audit, group_trains
 
@@ -21,4 +22,5 @@ __all__ = [
     "infer_site",
     "measure_recovery",
     "pulse_windows",
+    "stimulation_periods",
 ]

@@ -20,6 +20,7 @@ from spikeinterface.sortingcomponents.peak_detection import detect_peaks
 from meagraph.detect.noise import median_abs_noise_uv
 from meagraph.io.mcs_events import StimEvents
 from meagraph.preprocess import detection_band, merge_windows
+from meagraph.probe.build import channel_positions_um
 from meagraph.spiketrains import SpikeTrains
 from meagraph.stimulation.artifacts import Recovery, fixed_windows, measure_recovery, pulse_windows
 
@@ -77,6 +78,10 @@ class ChannelQC:
 
 @dataclass(frozen=True, eq=False)
 class DetectionResult:
+    """Everything later steps need from a recording: spikes (with electrode positions when the
+    recording has a probe), per-channel QC, and the stimulation events, so analyses of a saved
+    result never have to reopen the raw file."""
+
     trains: SpikeTrains
     amplitudes_uv: dict[str, np.ndarray]
     waveforms_uv: dict[str, np.ndarray]  # (n_spikes, n_samples), filtered
@@ -85,6 +90,7 @@ class DetectionResult:
     excluded: dict[str, str]  # channel id -> reason; no spikes are reported for these
     recovery_ms: dict[str, dict[str, float]]  # STG source -> channel -> ms (adaptive blanking only)
     config: DetectionConfig
+    stim: tuple[StimEvents, ...] = ()  # the events that were blanked, with their sites
 
     @property
     def active_channels(self) -> tuple[str, ...]:
@@ -229,6 +235,8 @@ def detect_spikes(
         amps[c] = amp[sel].astype(np.float32)
         wfs[c] = wf[sel]
     trains = SpikeTrains.from_dict(times, t0, t0 + n / fs)
+    if recording.has_probe():
+        trains = trains.with_positions(channel_positions_um(recording))
     return DetectionResult(
         trains=trains,
         amplitudes_uv=amps,
@@ -238,4 +246,5 @@ def detect_spikes(
         excluded=excluded,
         recovery_ms=recoveries,
         config=cfg,
+        stim=tuple(stim),
     )

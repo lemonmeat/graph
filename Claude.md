@@ -22,8 +22,13 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **Full benchmark done** (2026-10-05): results in `docs/METHODS.md` § Validation and `docs/benchmark/benchmark.csv`. The D19 proposals await the owner.
   - It takes about 1.5 CPU-hours: run `caffeinate -i meagraph benchmark --n-jobs 4`.
   - macOS throttles long background jobs about 100× when idle. That, not the code, was why a run stalled overnight.
+- **Architecture cleanup done** (2026-10-05, D20): layer map and output folder formats in `docs/ARCHITECTURE.md`.
+  - Detection folders are self-contained (positions + `stimulation.csv`); `meagraph graph` reads only them and records a `GraphConfig`.
+  - Shared helpers: `meagraph.intervals`, `SpikeTrains.without_periods`, `StimEvents.ends_s`, `stimulation.stimulation_periods`, `probe.DEFAULT_PROBE`, `ProbeSpec.positions_xyz_um`.
+  - `tests/test_architecture.py` guards the layering (no matplotlib in the core; estimators independent of io/detect).
+  - Pending owner OK (file deletions were blocked): turn `benchmark/` and `viz/` packages into single modules, delete the empty `realtime/` and `reservoir/` stubs, move `SessionConfig` from `config/models.py` into `io/session.py`.
 - **Next is Phase 5:** more methods, namely GLM, stimulus-evoked, CFP, and possibly Elephant's TSPE (`elephant.functional_connectivity.total_spiking_probability_edges`).
-- Decisions D1–D17 are Accepted. D18 (excluding 200 ms after each pulse) is Proposed.
+- Decisions D1–D17 are Accepted. D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults) and D20 (self-contained result folders) are Proposed.
 - **Retiring the legacy scripts** (`spikes.py`, `visualize.py`) awaits owner approval. The regression test passes and `meagraph view` replaces the viewer.
 
 ## Hardware and data

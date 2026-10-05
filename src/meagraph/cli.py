@@ -91,29 +91,26 @@ def _detect(args: argparse.Namespace) -> int:
 
 
 def _graph(args: argparse.Namespace) -> int:
-    from meagraph.connectivity.pipeline import graphs_from_detection, save_burst_controlled, stimulation_periods
+    from meagraph.connectivity.pipeline import GraphConfig, graphs_from_detection, save_burst_controlled
     from meagraph.detect.store import find_detection, load_detection
-    from meagraph.io import read_stim_events
 
     path = Path(args.path)
     folder = path if path.is_dir() else (Path(args.spikes) if args.spikes else find_detection(path))
     if folder is None:
         raise SystemExit(f"no detection results for {path.name}; run `meagraph detect` first")
     detection = load_detection(folder)
+    config = GraphConfig(channels=args.channels, exclude_stim_post_ms=args.exclude_stim_ms)
     chosen = detection.active_channels if args.channels == "active" else detection.trains.unit_ids
     if len(chosen) < 2:
         print(f"{folder}: {len(chosen)} {args.channels} channel(s); at least 2 are needed")
         return 0
-    stim = read_stim_events(path) if path.is_file() else []
-    excluded = stimulation_periods(stim, post_ms=args.exclude_stim_ms) if stim and args.exclude_stim_ms > 0 else None
-    graphs = graphs_from_detection(detection, methods=args.method, probe=args.probe, channels=args.channels, exclude_periods=excluded)
+    graphs = graphs_from_detection(detection, methods=args.method, config=config)
     print(f"{folder.parent.name}: {len(chosen)} {args.channels} channels {list(chosen)}")
-    if excluded is not None:
-        print(f"  excluded {len(excluded)} stimulation periods (pulse to +{args.exclude_stim_ms:g} ms)")
-    elif path.is_dir():
-        print("  note: given a detection folder, so stimulation periods (if any) were not excluded")
+    if detection.stim and config.exclude_stim_post_ms > 0:
+        n_pulses = sum(s.n for s in detection.stim)
+        print(f"  excluded {n_pulses} stimulation pulses (pulse to +{config.exclude_stim_post_ms:g} ms)")
     for method, bc in graphs.items():
-        out = save_burst_controlled(bc, folder.parent / f"graph_{method}", overwrite=True)
+        out = save_burst_controlled(bc, folder.parent / f"graph_{method}", config, inputs=[folder / "spikes.npz"], overwrite=True)
         n_all, n_quiet, n_robust = (int(r.significant.sum()) // (1 if r.directed else 2) for r in (bc.all, bc.no_bursts, bc.robust))
         print(f"  {method}: {int(bc.all.tested.sum()) // (1 if bc.all.directed else 2)} pairs tested; significant: "
               f"{n_all} all spikes, {n_quiet} without {len(bc.bursts)} network bursts, {n_robust} robust -> {out}")  # fmt: skip
@@ -154,11 +151,13 @@ def _view(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    from meagraph.probe import DEFAULT_PROBE
+
     parser = argparse.ArgumentParser(prog="meagraph", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
     def session_args(p):
-        p.add_argument("--probe", default="cube4x4x4_E-00303", help="probe spec name or YAML path (see `meagraph probes`)")
+        p.add_argument("--probe", default=DEFAULT_PROBE, help="probe spec name or YAML path (see `meagraph probes`)")
         p.add_argument("--stim-site", action="append", help="stimulated electrode: '47', or 'STG 1=47' per output")
 
     p = sub.add_parser("info", help="summarise the streams, events and spike streams in MCS .h5 files")
@@ -188,7 +187,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--spikes", help="detection folder, if not the newest one")
     p.add_argument("--method", nargs="+", default=["cch_jitter", "cch_hollow", "sttc"])
     p.add_argument("--channels", choices=["active", "all"], default="active", help="QC-active channels only (default)")
-    p.add_argument("--probe", default="cube4x4x4_E-00303")
     p.add_argument("--exclude-stim-ms", type=float, default=200.0,
                    help="drop spikes from each pulse to this long after it (stimulation recordings; 0 keeps them)")
     p.set_defaults(func=_graph)

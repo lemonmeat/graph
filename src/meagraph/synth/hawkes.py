@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import numpy as np
 from pydantic import BaseModel, ConfigDict, NonNegativeFloat, PositiveFloat, PositiveInt
 
-from meagraph.probe.spec import load_probe_spec
+from meagraph.probe.spec import DEFAULT_PROBE, load_probe_spec
 from meagraph.spiketrains import SpikeTrains
 
 
@@ -25,7 +25,7 @@ class NetworkConfig(BaseModel):
 
     duration_s: PositiveFloat = 600.0
     n_units: PositiveInt = 16
-    probe: str = "cube4x4x4_E-00303"  # units sit on randomly chosen contacts of this probe
+    probe: str = DEFAULT_PROBE  # units sit on randomly chosen contacts of this probe
     rate_hz: tuple[PositiveFloat, PositiveFloat] = (0.2, 2.0)  # baseline rates, log-uniform per unit
     connection_prob: NonNegativeFloat = 0.1
     weight: tuple[NonNegativeFloat, NonNegativeFloat] = (0.05, 0.2)  # transmission probability, uniform per connection
@@ -103,9 +103,7 @@ def simulate_network(config: NetworkConfig | None = None) -> SyntheticNetwork:
         raise ValueError(f"{n} units but probe {cfg.probe!r} has {len(spec.contacts)} contacts")
     pick = np.sort(rng.choice(len(spec.contacts), n, replace=False))
     labels = tuple(spec.labels[k] for k in pick)
-    positions = spec.positions_um()[pick]
-    if positions.shape[1] == 2:
-        positions = np.column_stack([positions, np.zeros(n)])
+    positions = spec.positions_xyz_um()[pick]
 
     rates = np.exp(rng.uniform(*np.log(cfg.rate_hz), n))
     connected = rng.random((n, n)) < cfg.connection_prob

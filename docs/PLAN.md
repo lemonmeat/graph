@@ -37,6 +37,8 @@ Q11–Q13 are resolved: the package is `meagraph`, the existing `.venv` is used,
 
 ## Architecture
 
+This is the layout planned in Phase 0. The layout as built, with its layers and output folders, is in `ARCHITECTURE.md`; some modules below (for example `detect/qc.py`, `connectivity/significance.py`, `apps/viewer/`) ended up elsewhere.
+
 ```
 src/meagraph/                    (package name: proposal, see Q11)
   io/

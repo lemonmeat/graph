@@ -16,6 +16,7 @@ import numpy as np
 from meagraph import viz
 from meagraph.detect.store import find_detection, load_detection
 from meagraph.io import McsH5Recording, Session, load_session, read_spikes_sidecar, sidecar_path
+from meagraph.probe import DEFAULT_PROBE
 
 
 @dataclass
@@ -56,7 +57,7 @@ class ViewerData:
         return self._stream_cache[label]
 
 
-def load_viewer_data(path, probe="cube4x4x4_E-00303", stim_site=None, spikes_dir=None) -> ViewerData:
+def load_viewer_data(path, probe=DEFAULT_PROBE, stim_site=None, spikes_dir=None) -> ViewerData:
     """Spikes come from ``spikes_dir``, else the newest ``meagraph detect`` result, else a legacy sidecar."""
     session = load_session(path, probe=probe, stim_site=stim_site)
     rec = session.recording

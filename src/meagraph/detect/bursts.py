@@ -3,7 +3,7 @@
 ISI_N method (Bakkum et al. 2013): pool every channel's spikes; wherever ``n_spikes``
 consecutive pooled spikes fall within ``max_span_ms``, those spikes belong to a burst.
 Overlapping runs merge into one burst, which is kept if at least ``min_channels``
-distinct channels take part.
+distinct channels take part. Remove the periods with :meth:`SpikeTrains.without_periods`.
 """
 
 from __future__ import annotations
@@ -44,17 +44,3 @@ def network_bursts(trains: SpikeTrains, config: BurstConfig | None = None) -> np
         if np.unique(owner[first : last + 1]).size >= cfg.min_channels:
             bursts.append((times[first], times[last]))
     return np.array(bursts, dtype=np.float64).reshape(-1, 2)
-
-
-def remove_periods(trains: SpikeTrains, periods: np.ndarray, pad_s: float = 0.0) -> SpikeTrains:
-    """Drop spikes inside ``[start - pad, stop + pad]`` of any period. Duration is unchanged."""
-    p = np.asarray(periods, dtype=np.float64).reshape(-1, 2)
-    if p.size == 0:
-        return trains
-    lo, hi = p[:, 0] - pad_s, p[:, 1] + pad_s
-    kept = []
-    for t in trains.times_s:
-        k = np.searchsorted(lo, t, side="right") - 1
-        inside = (k >= 0) & (t <= hi[np.maximum(k, 0)])
-        kept.append(t[~inside])
-    return SpikeTrains(trains.unit_ids, tuple(kept), trains.t_start_s, trains.t_stop_s, trains.channel_ids, trains.positions_um)

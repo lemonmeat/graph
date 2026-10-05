@@ -7,6 +7,7 @@ so new arrays need a file, not code.
 from __future__ import annotations
 
 import csv
+from collections.abc import Sequence
 from importlib.resources import files
 from pathlib import Path
 from typing import Literal
@@ -16,6 +17,9 @@ import yaml
 from pydantic import BaseModel, ConfigDict, PositiveFloat, PositiveInt, model_validator
 
 _DATA = files("meagraph.probe") / "data"
+
+# The probe used when none is named: the custom 4x4x4 array. Other arrays are chosen by name.
+DEFAULT_PROBE = "cube4x4x4_E-00303"
 
 
 class GridContact(BaseModel):
@@ -75,6 +79,19 @@ class ProbeSpec(BaseModel):
         if self.ndim == 2:
             return xy
         return np.column_stack([xy, g[:, 2] * self.layer_spacing_um])
+
+    def positions_xyz_um(self, labels: Sequence[str] | None = None) -> np.ndarray:
+        """(n, 3) positions of ``labels`` (default: every contact, in spec order); planar probes get z = 0."""
+        pos = self.positions_um()
+        if pos.shape[1] == 2:
+            pos = np.column_stack([pos, np.zeros(len(pos))])
+        if labels is None:
+            return pos
+        index = {c: k for k, c in enumerate(self.labels)}
+        missing = [c for c in labels if c not in index]
+        if missing:
+            raise KeyError(f"channels {missing} are not on probe {self.name!r}")
+        return pos[[index[c] for c in labels]]
 
 
 def available_probe_specs() -> list[str]:

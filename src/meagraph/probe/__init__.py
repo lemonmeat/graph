@@ -7,9 +7,10 @@ from meagraph.probe.build import (
     channel_distances_um,
     channel_positions_um,
 )
-from meagraph.probe.spec import GridContact, ProbeSpec, available_probe_specs, load_probe_spec
+from meagraph.probe.spec import DEFAULT_PROBE, GridContact, ProbeSpec, available_probe_specs, load_probe_spec
 
 __all__ = [
+    "DEFAULT_PROBE",
     "GridContact",
     "ProbeSpec",
     "UnverifiedGeometryWarning",

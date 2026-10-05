@@ -3,15 +3,16 @@ import json
 import numpy as np
 import pytest
 import quantities as pq
+import yaml
 import neo
 from elephant.spike_train_correlation import spike_time_tiling_coefficient as elephant_sttc
 
 from meagraph import SpikeTrains
 from meagraph.benchmark import roc_auc, run_benchmark, scenarios, score
 from meagraph.connectivity import ESTIMATORS, cross_correlograms, estimate, interval_jitter, load_result, save_result, to_networkx, window_counts
-from meagraph.connectivity.pipeline import burst_controlled, positions_for
+from meagraph.connectivity.pipeline import burst_controlled
 from meagraph.connectivity.stats import fdr_mask, sttc
-from meagraph.detect.bursts import BurstConfig, network_bursts, remove_periods
+from meagraph.detect.bursts import BurstConfig, network_bursts
 from meagraph.synth import NetworkConfig, simulate_network
 
 FAST = {"n_surrogates": 200}
@@ -98,11 +99,14 @@ def test_simulated_bursts_are_detected():
     assert len(found) <= 2 * len(net.bursts) + 2
 
 
-def test_remove_periods():
+def test_without_periods():
     trains = SpikeTrains.from_dict({"a": [1.0, 2.0, 3.0]}, 0.0, 4.0)
-    out = remove_periods(trains, np.array([[1.5, 2.5]]))
+    out = trains.without_periods(np.array([[1.5, 2.5]]))
     np.testing.assert_array_equal(out.times_s[0], [1.0, 3.0])
     assert out.duration_s == trains.duration_s
+    # Overlapping, unsorted periods: the long first period must still cover 2.0.
+    out = trains.without_periods(np.array([[2.9, 3.1], [0.5, 2.5], [1.8, 1.9]]))
+    np.testing.assert_array_equal(out.times_s[0], [])
 
 
 # -- estimators on ground truth -------------------------------------------------------------- #
@@ -163,10 +167,14 @@ def test_burst_control_and_result_storage(tmp_path, strong_network):
 
 
 def test_positions_come_from_the_probe():
-    pos = positions_for(["47", "12"], "cube4x4x4_E-00303")
+    from meagraph.probe import load_probe_spec
+
+    spec = load_probe_spec("cube4x4x4_E-00303")
+    pos = spec.positions_xyz_um(["47", "12"])
     assert pos.shape == (2, 3)
     with pytest.raises(KeyError):
-        positions_for(["99"], "cube4x4x4_E-00303")
+        spec.positions_xyz_um(["99"])
+    assert not load_probe_spec("mcs60_8x8_200um").positions_xyz_um()[:, 2].any()  # planar: z = 0
 
 
 def test_benchmark_runs_and_scores_every_spike_set():
@@ -177,8 +185,8 @@ def test_benchmark_runs_and_scores_every_spike_set():
 
 
 def test_stimulation_periods_pad_and_merge():
-    from meagraph.connectivity.pipeline import stimulation_periods
     from meagraph.io.mcs_events import StimEvents
+    from meagraph.stimulation import stimulation_periods
 
     stim = StimEvents("STG 1", "Single Pulse", np.array([1.0, 1.1, 5.0]), np.array([1.002, 1.102, 5.002]))
     p = stimulation_periods([stim], pre_ms=1.0, post_ms=200.0)
@@ -190,18 +198,30 @@ def test_cli_graph_on_a_detection_folder(tmp_path, capsys):
     from meagraph.cli import main
     from meagraph.detect import DetectionConfig, DetectionResult, save_detection
     from meagraph.detect.threshold import ChannelQC
+    from meagraph.io.mcs_events import StimEvents
 
     net = simulate_network(NetworkConfig(duration_s=300, n_units=6, connection_prob=0.2, weight=(0.3, 0.3), seed=4))
     ids = net.trains.unit_ids
+    onsets = np.arange(5.0, 300.0, 5.0)
     det = DetectionResult(
         trains=net.trains, amplitudes_uv={u: np.zeros(t.size, np.float32) for u, t in zip(ids, net.trains.times_s)},
         waveforms_uv={u: np.zeros((t.size, 30), np.float32) for u, t in zip(ids, net.trains.times_s)},
         noise_uv={u: 1.0 for u in ids}, excluded={}, recovery_ms={}, config=DetectionConfig(),
         qc=ChannelQC(ids, np.full(len(ids), 100), np.zeros(len(ids), int), np.zeros(len(ids)), np.ones(len(ids), bool)),
+        stim=(StimEvents("STG 1", "Single Pulse", onsets, onsets + 0.001),),
     )  # fmt: skip
     folder = save_detection(det, tmp_path / "results" / "rec" / "detect_default")
     assert main(["graph", str(folder), "--method", "cch_hollow"]) == 0
     out = capsys.readouterr().out
-    assert "6 active channels" in out and "stimulation periods (if any) were not excluded" in out
+    assert "6 active channels" in out and f"excluded {onsets.size} stimulation pulses (pulse to +200 ms)" in out
+    graph = tmp_path / "results" / "rec" / "graph_cch_hollow"
     for sub in ("all", "no_bursts", "robust"):
-        assert (tmp_path / "results" / "rec" / "graph_cch_hollow" / sub / "graph.graphml").exists()
+        assert (graph / sub / "graph.graphml").exists()
+    # The folder records how the graph was made, and from which spikes.
+    cfg = yaml.safe_load((graph / "all" / "config.yaml").read_text())
+    assert cfg["pipeline"]["exclude_stim_post_ms"] == 200.0 and cfg["pipeline"]["channels"] == "active"
+    prov = json.loads((graph / "all" / "provenance.json").read_text())
+    assert prov["inputs"][0]["path"].endswith("spikes.npz")
+    # Node positions travel with the spikes from detection.
+    res = load_result(graph / "all")
+    np.testing.assert_allclose(res.positions_um, net.trains.positions_um)

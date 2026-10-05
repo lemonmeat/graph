@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from numpy.typing import ArrayLike
 
+from meagraph.intervals import inside, merge_intervals
+
 
 @dataclass(frozen=True, eq=False)
 class SpikeTrains:
@@ -97,10 +99,18 @@ class SpikeTrains:
             positions,
         )
 
-    def with_positions(self, positions_um: ArrayLike) -> SpikeTrains:
-        return SpikeTrains(
-            self.unit_ids, self.times_s, self.t_start_s, self.t_stop_s, self.channel_ids, np.asarray(positions_um)
-        )
+    def with_positions(self, positions_um: ArrayLike | None) -> SpikeTrains:
+        positions = None if positions_um is None else np.asarray(positions_um)
+        return SpikeTrains(self.unit_ids, self.times_s, self.t_start_s, self.t_stop_s, self.channel_ids, positions)
+
+    def without_periods(self, periods: ArrayLike, pad_s: float = 0.0) -> SpikeTrains:
+        """Drop spikes inside ``[start - pad, stop + pad]`` of any period (s). Duration is unchanged."""
+        p = np.asarray(periods, dtype=np.float64).reshape(-1, 2)
+        if p.size == 0:
+            return self
+        merged = merge_intervals(p + np.array([-pad_s, pad_s]))
+        kept = tuple(t[~inside(t, merged)] for t in self.times_s)
+        return SpikeTrains(self.unit_ids, kept, self.t_start_s, self.t_stop_s, self.channel_ids, self.positions_um)
 
     def to_sorting(self, sampling_frequency_hz: float):
         """SpikeInterface ``NumpySorting``; sample 0 is ``t_start_s`` (the recording's first sample)."""

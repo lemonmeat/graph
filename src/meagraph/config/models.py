@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, NonNegativeInt
 
+from meagraph.probe.spec import DEFAULT_PROBE
+
 
 class SessionConfig(BaseModel):
     """Which file, stream and probe make up a session, plus metadata the file does not store."""
@@ -14,7 +16,7 @@ class SessionConfig(BaseModel):
 
     path: Path
     stream: str = "raw"
-    probe: str = "cube4x4x4_E-00303"
+    probe: str = DEFAULT_PROBE
     recording_index: NonNegativeInt = 0
     # The stimulated electrode is not recorded in MCS files. Either one electrode id for every
     # STG output, or a mapping such as {"STG 1": "47"}.
