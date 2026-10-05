@@ -29,7 +29,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - Pending owner OK (file deletions were blocked): turn `benchmark/` and `viz/` packages into single modules, delete the empty `realtime/` and `reservoir/` stubs, move `SessionConfig` from `config/models.py` into `io/session.py`.
 - **Next is Phase 5:** more methods, namely GLM, stimulus-evoked, CFP, and possibly Elephant's TSPE (`elephant.functional_connectivity.total_spiking_probability_edges`).
 - Decisions D1–D17 are Accepted. D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults) and D20 (self-contained result folders) are Proposed.
-- **Retiring the legacy scripts** (`spikes.py`, `visualize.py`) awaits owner approval. The regression test passes and `meagraph view` replaces the viewer.
+- **Legacy scripts retired** 2026-10-05 (see Existing code below).
 
 ## Hardware and data
 
@@ -38,7 +38,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - Electrode pitch within a layer: TODO µm.
   - Layer spacing: TODO µm (the paper reports 25–250 µm spacers).
   - Electrode diameter: TODO (the paper says 30 µm).
-- **Channel map:** label → (row, col, layer) is `MEA_CUBE` in `mcs.py`, now `src/meagraph/probe/data/cube4x4x4_E-00303_map.csv`. It encodes the headstage-to-electrode wiring (owner confirmed).
+- **Channel map:** label → (row, col, layer) is `src/meagraph/probe/data/cube4x4x4_E-00303_map.csv` (formerly `MEA_CUBE` in the legacy `mcs.py`). It encodes the headstage-to-electrode wiring (owner confirmed).
 - **File format:** MCS HDF5, Multi Channel Experimenter 2.21 / DataManager 1.14, protocol RawData v3. Full layout in `docs/DATA_FORMAT.md`.
 - **Sampling rate:** 10 kHz in the current files (`Tick` = 100 µs). Always read it from `InfoChannel.Tick`.
 - **Analog stream index is not processing order.** `Stream_0` = raw, `Stream_3` = Filter 1, `Stream_2` = Filter 2, `Stream_1` = Filter 3. Select by label or lineage.
@@ -74,10 +74,10 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 
 ## Existing code
 
-- `spikes.py` is the current spike analysis script and the reference for regression tests. Its spike timestamps are relative to the first sample, not the recording clock.
-- `visualize.py` is the current viewer, including the 4x4x4 electrode selector that must be preserved. The UX contract is listed in `docs/EXISTING_CODE.md`.
-- `mcs.py`, `spontaneous_ccg.py`, `stim_audit.py` and `stim_connectivity.py` are also documented in `docs/EXISTING_CODE.md`.
-- **The legacy scripts are frozen (D7), bugs included.** Never run `spikes.py` without arguments in the repo root: it overwrites the sidecars. The regression baseline is the committed copy in `tests/data/legacy_baseline/`, protected by a checksum test.
+- **Legacy scripts removed 2026-10-05** (owner approved): `mcs.py`, `spikes.py`, `visualize.py`, `spontaneous_ccg.py`, `stim_audit.py`. Recover any with `git show f3045f7:<name>`. What they did, and their bugs, is in `docs/EXISTING_CODE.md`.
+- `stim_connectivity.py` remains only as the reference for the Phase 5 stimulus-evoked estimator. It cannot run (it imports the removed `mcs.py`). Delete it once that port is done.
+- The regression baseline is the committed copy of the `spikes.py` sidecars in `tests/data/legacy_baseline/`, protected by a checksum test. `spikes.py` timestamps were relative to the first sample, not the recording clock.
+- The three DIV140 `*.spikes.h5` sidecars in the repo root are kept; the viewer only falls back to them when a recording has no `meagraph detect` results.
 
 ## Environment
 
@@ -101,7 +101,6 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 ## Do not
 
 - Do not delete or overwrite raw `.h5` files.
-- Do not remove `spikes.py` or `visualize.py` until the refactored pipeline passes the regression test and the owner approves.
 - Do not hardcode geometry, sampling rate, or file paths in library code.
 - Do not choose scientific parameters silently; flag them and ask.
 - Do not select analog streams by index or decode MCS entities by row.

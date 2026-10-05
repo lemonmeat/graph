@@ -120,6 +120,8 @@ This entry must be re-checked whenever the SI version changes.
 
 **Running the legacy scripts.** Do not run `spikes.py` with default arguments in the repo root: it overwrites the `*.spikes.h5` sidecars next to the recordings.
 
+**Retired 2026-10-05.** With the regression test passing, the owner approved removing `mcs.py`, `spikes.py`, `visualize.py`, `spontaneous_ccg.py` and `stim_audit.py` (recoverable from commit `f3045f7`). `stim_connectivity.py` stays until the Phase 5 port. The regression test does not need the scripts: it compares against the committed baseline.
+
 **Regression baseline.** The baseline is a committed copy in `tests/data/legacy_baseline/`. It holds the three sidecars written 2026-09-30, after the last edit to `spikes.py`, plus a `SHA256SUMS` file. A test fails if the copy changes.
 
 ---

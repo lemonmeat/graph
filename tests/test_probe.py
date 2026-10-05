@@ -1,4 +1,3 @@
-import importlib.util
 import warnings
 
 import numpy as np
@@ -6,7 +5,6 @@ import pytest
 import spikeinterface as si
 from pydantic import ValidationError
 
-from conftest import REPO
 from meagraph.io import McsH5Recording
 from meagraph.probe import (
     GridContact,
@@ -35,17 +33,6 @@ def _spec(**overrides):
 
 def test_packaged_specs_are_listed():
     assert {CUBE, "mcs60_8x8_200um"} <= set(available_probe_specs())
-
-
-def test_cube_spec_matches_legacy_map():
-    legacy = REPO / "mcs.py"
-    if not legacy.exists():
-        pytest.skip("legacy mcs.py not present")
-    module_spec = importlib.util.spec_from_file_location("legacy_mcs", legacy)
-    mcs = importlib.util.module_from_spec(module_spec)
-    module_spec.loader.exec_module(mcs)
-    spec = load_probe_spec(CUBE)
-    assert {c.label: (c.row, c.col, c.layer) for c in spec.contacts} == mcs.MEA_CUBE
 
 
 def test_cube_has_59_contacts_and_5_empty_cells():
@@ -107,7 +94,7 @@ def test_attach_probe_drops_reference_and_keeps_z(make_mcs_file):
     expected = dict(zip(spec.labels, spec.positions_um()))
     np.testing.assert_allclose(rec.get_channel_locations(axes="xyz"), [expected[c] for c in rec.channel_ids])
     assert rec.get_channel_locations().shape[1] == 2  # SI's default silently drops z (D3)
-    np.testing.assert_array_equal(rec.get_property("grid_layer"), [4, 3, 2])  # 47, 12, 33 in MEA_CUBE
+    np.testing.assert_array_equal(rec.get_property("grid_layer"), [4, 3, 2])  # 47, 12, 33 in the cube map
 
 
 def test_probe_survives_spikeinterface_roundtrip(make_mcs_file):

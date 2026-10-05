@@ -96,4 +96,4 @@ pytest                  # everything; tests marked `data` use the recordings in 
 pytest -m "not slow"    # skip the full-pipeline regression against the old spikes.py (about 30 s)
 ```
 
-The legacy scripts (`spikes.py`, `visualize.py`, …) are kept unchanged for reference until they are retired.
+The legacy scripts were retired on 2026-10-05; `docs/EXISTING_CODE.md` says what they did and how to recover them from git. `stim_connectivity.py` stays until its Phase 5 replacement exists.

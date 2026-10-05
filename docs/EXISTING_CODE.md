@@ -2,7 +2,7 @@
 
 Snapshot of the pre-refactor scripts as of 2026-10-03.
 
-**Replacements (Phases 2–3).** `spikes.py` is reproduced by `meagraph detect --profile legacy` (`tests/test_regression.py`), `visualize.py` by `meagraph view`, and `stim_audit.py` by `meagraph audit`. The old scripts stay until the owner approves retiring them. These are the reference implementation. `spikes.py` is the regression baseline, and the viewer UX in `visualize.py` must survive the refactor. Line numbers refer to this snapshot.
+**Replacements (Phases 2–3).** `spikes.py` is reproduced by `meagraph detect --profile legacy` (`tests/test_regression.py`), `visualize.py` by `meagraph view`, and `stim_audit.py` by `meagraph audit`. **Removed 2026-10-05** with the owner's approval: `mcs.py`, `spikes.py`, `visualize.py`, `spontaneous_ccg.py`, `stim_audit.py` and `ccg_connectivity.npz`. All are in git at commit `f3045f7` (`git show f3045f7:spikes.py`). Only `stim_connectivity.py` remains, as the reference for the Phase 5 stimulus-evoked estimator; it can no longer run, because it imports `mcs.py`. This document stays as the record of what the scripts did and of their bugs. These were the reference implementation. `spikes.py` is the regression baseline, and the viewer UX in `visualize.py` must survive the refactor. Line numbers refer to this snapshot.
 
 The scripts form a flat layout around a shared reader:
 

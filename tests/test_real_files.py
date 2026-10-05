@@ -1,12 +1,9 @@
 """Checks against the real recordings (docs/DATA_FORMAT.md). Skipped when the files are absent."""
 
-import importlib.util
-
 import h5py
 import numpy as np
 import pytest
 
-from conftest import REPO
 from meagraph.io import (
     McsH5Recording,
     inspect_file,
@@ -26,16 +23,6 @@ def _by_tag(files, tag):
     return hits[0]
 
 
-def _legacy_mcs():
-    path = REPO / "mcs.py"
-    if not path.exists():
-        pytest.skip("legacy mcs.py not present")
-    spec = importlib.util.spec_from_file_location("legacy_mcs", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def test_reader_matches_independent_h5py_computation(real_files):
     for path in real_files:
         rec = McsH5Recording(path)
@@ -47,16 +34,6 @@ def test_reader_matches_independent_h5py_computation(real_files):
         gain = info["ConversionFactor"] * 10.0 ** info["Exponent"] * 1e6
         expected = ((rows[info["RowIndex"]] - info["ADZero"][:, None]) * gain[:, None]).T
         np.testing.assert_allclose(rec.get_traces(start_frame=i0, end_frame=i1, return_in_uV=True), expected, rtol=1e-6, atol=1e-4)
-
-
-def test_reader_is_bit_identical_to_legacy(real_files):
-    mcs = _legacy_mcs()
-    for path in real_files:
-        rec = McsH5Recording(path)
-        with mcs.McsFile(str(path)) as m:
-            old = m.analog_stream(0).read_uv(10.0, 11.0, channels=list(rec.channel_ids)).T
-        new = rec.get_traces(start_frame=100_000, end_frame=110_000, return_in_uV=True)
-        np.testing.assert_array_equal(new, old)
 
 
 def test_time_base_and_sampling_rate(real_files):
