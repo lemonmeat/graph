@@ -17,14 +17,14 @@ Without uv, `python -m venv .venv` followed by `pip install -e ".[viewer,dev]"` 
 
 ## Use
 
-Quote file names that contain spaces.
+Put recordings in `data/` (git-ignored); results are written to `data/results/`. Quote file names that contain spaces.
 
 ```bash
-meagraph info recording.h5          # what is in the file: streams, stimulation events, MCS spike streams
-meagraph audit recording.h5         # stimulation: pulse structure, stimulated site, artifact recovery per channel
-meagraph detect recording.h5 --stim-site 47     # spikes + signal-quality check, saved under results/
-meagraph graph recording.h5         # connectivity among signal-quality-checked electrodes (needs `detect` first)
-meagraph view recording.h5          # interactive viewer (click electrodes in the 3D map)
+meagraph info data/recording.h5     # what is in the file: streams, stimulation events, MCS spike streams
+meagraph audit data/recording.h5    # stimulation: pulse structure, stimulated site, artifact recovery per channel
+meagraph detect data/recording.h5 --stim-site 47   # spikes + signal-quality check, saved under data/results/
+meagraph graph data/recording.h5    # connectivity among signal-quality-checked electrodes (needs `detect` first)
+meagraph view data/recording.h5     # interactive viewer (click electrodes in the 3D map)
 meagraph benchmark --n-jobs 4       # score the connectivity methods on simulated networks (see below; --quick: seconds)
 ```
 
@@ -60,7 +60,7 @@ The full benchmark runs 81 simulated networks: about 1.5 CPU-hours, or roughly 2
 from meagraph.io import load_session
 from meagraph.detect import detect_spikes
 
-session = load_session("recording.h5", stim_site="47")
+session = load_session("data/recording.h5", stim_site="47")
 rec = session.recording                          # lazy SpikeInterface recording with the 3D probe attached
 result = detect_spikes(rec, session.stim)        # see meagraph.detect.DetectionConfig for every parameter
 result.trains.as_dict()                          # {electrode: spike times in s}
@@ -92,7 +92,7 @@ graphs["cch_jitter"].no_bursts.edges()
 ## Tests
 
 ```bash
-pytest                  # everything; tests marked `data` use the recordings in this folder
+pytest                  # everything; tests marked `data` use the recordings in data/
 pytest -m "not slow"    # skip the full-pipeline regression against the old spikes.py (about 30 s)
 ```
 

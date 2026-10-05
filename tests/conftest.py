@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from mcs_fixture import write_mcs_h5  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
-DATA_DIR = Path(os.environ.get("MEAGRAPH_DATA_DIR", REPO))
+DATA_DIR = Path(os.environ.get("MEAGRAPH_DATA_DIR", REPO / "data"))
 
 
 @pytest.fixture

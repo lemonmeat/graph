@@ -98,7 +98,7 @@ Every config is a frozen pydantic model next to the step that uses it, saved as 
 
 ## Output folders
 
-Results go to `results/<recording name>/` next to the recording.
+Results go to `results/<recording name>/` in the recording's folder, so with the recordings in `data/` they are in `data/results/`. Benchmark output goes to `results/benchmark/` in the working directory.
 
 ```
 results/<recording>/
@@ -148,5 +148,5 @@ Decorate it with `@register` and import it in `connectivity/__init__.py`. It the
 - **Unit tests** on small generated files in the MCS layout (`tests/mcs_fixture.py`). The fixture includes the traps found in Phase 0: a permuted `RowIndex`, non-zero ADZero, a filter stream stored before raw, shuffled InfoEvent rows, and sorter SegmentIDs out of row order.
 - **Ground-truth tests** of the connectivity methods on simulated networks (`tests/test_connectivity.py`).
 - **Structure guards** (`tests/test_architecture.py`): the core never imports matplotlib, and the estimators never import file reading or detection.
-- **Real-file tests**, marked `data`, which run when the recordings are in the repo root or in `$MEAGRAPH_DATA_DIR`. The `slow` regression test compares the `legacy` profile with `spikes.py`.
+- **Real-file tests**, marked `data`, which run when the recordings are in `data/` or in `$MEAGRAPH_DATA_DIR`. The `slow` regression test compares the `legacy` profile with `spikes.py`.
 - **A baseline guard:** a checksum test on the committed regression baseline in `tests/data/legacy_baseline/`.

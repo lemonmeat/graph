@@ -49,7 +49,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - TODO: amplitude units and mode.
 - **Older recordings** come from a standard 60-channel planar MEA. The pipeline should handle both through swappable probe definitions (TODO: MEA type and sample files).
 - **Recording types:** spontaneous activity and electrical stimulation sessions, including before/after stimulation blocks for plasticity comparison.
-- **Sample data location:** repo root. Raw data and `results/` are git-ignored.
+- **Sample data location:** `data/` (moved from the repo root 2026-10-05), with each recording's results in `data/results/<recording>/`. `data/` and `results/` (benchmark output) are git-ignored.
   - 3 files from exp3 DIV140 (2026-07-27), plus `*.spikes.h5` sidecars from `spikes.py`.
   - 2 files from DIV142 (2026-07-29): a 10 min spontaneous recording, and a 32 min (8 GB) "Associative Stimulation 1" recording using STG 1 + STG 2. Their names contain spaces.
 - **Associative protocol:** single pulses of about 2 ms; trains of 1/2/3 pulses every 5 s; alternating 50-train blocks per STG output. The whole array saturates during pulses, so the **stimulated sites cannot be inferred (Q14)**.
@@ -77,14 +77,14 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **Legacy scripts removed 2026-10-05** (owner approved): `mcs.py`, `spikes.py`, `visualize.py`, `spontaneous_ccg.py`, `stim_audit.py`. Recover any with `git show f3045f7:<name>`. What they did, and their bugs, is in `docs/EXISTING_CODE.md`.
 - `stim_connectivity.py` remains only as the reference for the Phase 5 stimulus-evoked estimator. It cannot run (it imports the removed `mcs.py`). Delete it once that port is done.
 - The regression baseline is the committed copy of the `spikes.py` sidecars in `tests/data/legacy_baseline/`, protected by a checksum test. `spikes.py` timestamps were relative to the first sample, not the recording clock.
-- The three DIV140 `*.spikes.h5` sidecars in the repo root are kept; the viewer only falls back to them when a recording has no `meagraph detect` results.
+- The three DIV140 `*.spikes.h5` sidecars in `data/` are kept; the viewer only falls back to them when a recording has no `meagraph detect` results.
 
 ## Environment
 
 - Python 3.13.13 in a uv-managed `.venv`. The venv has no pip; use `uv pip install --python .venv/bin/python ...`.
 - **Installed in `.venv`:** spikeinterface 0.105.0, probeinterface 0.4.0, neo 0.14.5, elephant 1.2.1, numpy 2.5.3, pydantic 2.13, pytest 9.1, plus `meagraph` itself in editable mode.
 - To reinstall the package: `uv pip install --python .venv/bin/python -e ".[dev]"`.
-- **Tests:** `.venv/bin/python -m pytest`. Real-file tests are marked `data` and look for recordings in the repo root or in `$MEAGRAPH_DATA_DIR`.
+- **Tests:** `.venv/bin/python -m pytest`. Real-file tests are marked `data` and look for recordings in `data/` or in `$MEAGRAPH_DATA_DIR`.
 - **Primary machine:** MacBook Pro, Apple M3 Pro, 18 GB RAM. Avoid tools that require CUDA for core functionality; GPU spike sorters are optional extras only.
 - **Poppler is not installed,** so the Read tool cannot render PDFs. Use `pypdf` to extract text.
 
@@ -114,7 +114,7 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q4.** Planar 60 MEA type and sample files.
 - **Q5.** MCS Filter 1/2/3 and Spike Detector settings.
 - **Q6.** Stimulation amplitude units and mode, polarity, and the site for the 11-15 file. The artifact says 12, and Phase 2 results used 12.
-- **Q7.** Afterstim baseline, longer or more active recordings, and the `data/` folder.
+- **Q7.** Afterstim baseline, and longer or more active recordings. (The `data/` folder part is resolved: recordings live there.)
 - **Q8.** Detection threshold for analysis.
 - **Q9.** Stimulation blanking strategy.
 - **Q10.** Connectivity significance defaults.
