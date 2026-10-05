@@ -25,8 +25,10 @@ meagraph audit recording.h5         # stimulation: pulse structure, stimulated s
 meagraph detect recording.h5 --stim-site 47     # spikes + signal-quality check, saved under results/
 meagraph graph recording.h5         # connectivity among signal-quality-checked electrodes (needs `detect` first)
 meagraph view recording.h5          # interactive viewer (click electrodes in the 3D map)
-meagraph benchmark                  # score the connectivity methods on simulated networks (about 30 min; --quick: 5 s)
+meagraph benchmark --n-jobs 4       # score the connectivity methods on simulated networks (see below; --quick: seconds)
 ```
+
+The full benchmark runs 81 simulated networks: about 1.5 CPU-hours, or roughly 25 minutes with `--n-jobs 4`. macOS throttles long jobs heavily when the machine idles or sleeps, so on a Mac start it as `caffeinate -i meagraph benchmark --n-jobs 4`.
 
 - `--stim-site` names the electrode that was stimulated, because MCS files do not record it. With two stimulator outputs, use `--stim-site "STG 1=47" --stim-site "STG 2=82"`.
 - `meagraph detect` writes `results/<recording>/detect_default/` next to the recording. It contains:

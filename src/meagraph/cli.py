@@ -128,11 +128,13 @@ def _benchmark(args: argparse.Namespace) -> int:
     from meagraph.benchmark import run_benchmark, scenarios, summarize, write_rows
     from meagraph.synth import NetworkConfig
 
+    progress = lambda message: print(message, flush=True)  # noqa: E731
     if args.quick:
         rows = run_benchmark(scenarios(durations_s=(300,), weights=(0.1,), base=NetworkConfig(n_units=8)), seeds=(0,),
-                             method_overrides={m: {"n_surrogates": 200} for m in ("cch_jitter", "sttc")})  # fmt: skip
+                             method_overrides={m: {"n_surrogates": 200} for m in ("cch_jitter", "sttc")},
+                             n_jobs=args.n_jobs, progress=progress)  # fmt: skip
     else:
-        rows = run_benchmark(scenarios())
+        rows = run_benchmark(scenarios(), n_jobs=args.n_jobs, progress=progress)
     out = write_rows(rows, Path(args.out) / "benchmark.csv")
     for spikes in ("all", "robust"):
         print(f"\n{spikes} spikes:")
@@ -192,8 +194,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_graph)
 
     p = sub.add_parser("benchmark", help="score the estimators on synthetic networks with known connections")
-    p.add_argument("--quick", action="store_true", help="one small scenario per condition (about a minute)")
+    p.add_argument("--quick", action="store_true", help="one small scenario per condition (seconds)")
     p.add_argument("--out", default="results/benchmark")
+    p.add_argument("--n-jobs", type=int, default=4, help="simulated networks processed in parallel")
     p.set_defaults(func=_benchmark)
 
     p = sub.add_parser("view", help="interactive viewer with the 4x4x4 electrode selector")

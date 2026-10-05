@@ -121,7 +121,61 @@ The STTC (Cutts & Eglen, 2014) is an undirected measure of co-firing within ±Δ
 - ROC area, computed from the p-values;
 - delay error.
 
-**Results:** pending. The full benchmark (27 scenarios × 3 seeds) was still running when this section was written; its tables will be added here.
+**Setup.**
+
+- 16 units, connection probability 0.1, transmission probabilities 0.03, 0.06 or 0.12.
+- Recordings of 2, 5, 10 or 30 min, with and without DIV142-like network bursts.
+- Null networks (no connections) with and without bursts, and with periodic stimulation.
+- 3 random seeds per scenario, 1000 jitter surrogates, FDR q = 0.05.
+- Command: `meagraph benchmark`. Per-network rows are in `docs/benchmark/benchmark.csv`.
+
+**Recall vs recording length** (mean over connection strengths and seeds):
+
+| Method | Spikes analysed | 2 min | 5 min | 10 min | 30 min |
+|---|---|---|---|---|---|
+| `cch_jitter` | no bursts present | 0.60 | 0.78 | 0.88 | 0.98 |
+| `cch_jitter` | bursts present, all spikes | 0.49 | 0.67 | 0.84 | 0.98 |
+| `cch_jitter` | bursts present, burst periods removed | 0.66 | 0.76 | 0.89 | 0.99 |
+| `cch_jitter` | bursts present, robust (both) | 0.24 | 0.55 | 0.82 | 0.98 |
+| `cch_hollow` | no bursts present | 0.85 | 0.82 | 0.90 | 0.92 |
+| `sttc` | no bursts present | 0.35 | 0.70 | 0.82 | 0.96 |
+
+**Recall vs connection strength** (`cch_jitter`, no bursts):
+
+| Transmission probability | 10 min | 30 min |
+|---|---|---|
+| 0.03 | 0.72 | 0.95 |
+| 0.06 | 0.95 | 0.99 |
+| 0.12 | 0.99 | 1.00 |
+
+**Precision and false positives** (all connected scenarios pooled):
+
+| Method | Precision (all spikes) | False positives that are indirect* | Delay error | ROC area |
+|---|---|---|---|---|
+| `cch_jitter` | 0.94–0.96 | 29 of 36 | 0.11 ms | 0.98–0.99 |
+| `cch_hollow` | 0.88–0.91 | 69 of 85 | 0.11 ms | 0.99 |
+| `sttc` | 0.82–0.85 | 78 of 93 | — | 0.95–0.97 |
+
+\*Indirect means a two-step chain (i → k → j) or common input (k → i and k → j). These pairs truly correlate, and pairwise methods cannot distinguish them from direct connections.
+
+**Null networks** (no connections; mean false edges per network; 240 ordered pairs tested by the correlogram methods, 120 unordered pairs by STTC):
+
+| Scenario | `cch_jitter` | `cch_hollow` | `sttc` |
+|---|---|---|---|
+| no bursts | 0 | 0 | 0 |
+| network bursts | 0 | 0 | 0 |
+| periodic stimulation (shared drive) | 0 | 0 | **62 (52 %)** |
+
+### What the validation shows
+
+1. **No false edges from rate effects.** In these simulations, none of the methods produced false edges from network bursts or rate differences.
+2. **STTC is not usable during stimulation.** Shared, time-locked stimulation made STTC report half of all pairs as connected, while the directional 1–4 ms correlogram tests were unaffected. Stimulation periods must be excluded for STTC (D18).
+3. **Bursts cost power, not specificity.** Burst co-firing inflates the null distribution and lowers recall in short recordings. Removing burst periods restores it. Requiring significance in both analyses ("robust") costs much more recall in short recordings (0.24 vs 0.66 at 2 min) than it gains in precision (0.97 vs 0.95).
+4. **The legacy symmetric-pair rule removes reciprocal connections.** `cch_hollow` levels off at 0.92 recall because this rule, inherited from `spontaneous_ccg.py`, drops pairs significant in both directions at similar delays. In a check with 30 min recordings, it found 119 of 119 one-way connections but only 6 of 12 reciprocal ones.
+5. **Recording length.** About 30 min of spontaneous activity recovers nearly all connections down to a transmission probability of 0.03. 10 min misses about a quarter of the weakest ones.
+6. **`cch_jitter` is the best primary method.** It has the highest precision, a delay for every edge, and no false edges in any null scenario. It is also the most conservative under the null (D17), which costs some recall in short recordings.
+
+**Limitations of the validation.** The simulated network is linear, has excitatory connections only, and keeps all delays inside the test window. Its bursts are rate surges rather than propagating network events. Real data can violate each of these assumptions.
 
 ## References
 

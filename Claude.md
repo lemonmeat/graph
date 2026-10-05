@@ -19,6 +19,9 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - Hawkes simulator and benchmark;
   - `meagraph graph` and `meagraph benchmark`.
   - First real edges in DIV142: 78→87 and 32→14 (the latter replicated in the associative file).
+- **Full benchmark done** (2026-10-05): results in `docs/METHODS.md` § Validation and `docs/benchmark/benchmark.csv`. The D19 proposals await the owner.
+  - It takes about 1.5 CPU-hours: run `caffeinate -i meagraph benchmark --n-jobs 4`.
+  - macOS throttles long background jobs about 100× when idle. That, not the code, was why a run stalled overnight.
 - **Next is Phase 5:** more methods, namely GLM, stimulus-evoked, CFP, and possibly Elephant's TSPE (`elephant.functional_connectivity.total_spiking_probability_edges`).
 - Decisions D1–D17 are Accepted. D18 (excluding 200 ms after each pulse) is Proposed.
 - **Retiring the legacy scripts** (`spikes.py`, `visualize.py`) awaits owner approval. The regression test passes and `meagraph view` replaces the viewer.
@@ -114,7 +117,8 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q14.** Which electrodes did STG 1 and STG 2 drive in the DIV142 associative file? They cannot be inferred from the data.
 - **Q15.** In stim47, positive QC events are elevated on several channels. Are slow artifact components outlasting the 50 ms QC exclusion? Check in Phase 6.
 - **Q16.** The synaptic window is [1, 4) ms (D14). In DIV142, the 32→14 correlogram peaks at about 6 ms. Should a wider window be used, or a sensitivity analysis run?
-- **Q17.** Accept D18 (exclude spikes up to 200 ms after each pulse in spontaneous connectivity)? And, depending on the benchmark, use the burst-removed analysis as the primary one rather than "robust"?
+- **Q17.** Accept D18, excluding spikes up to 200 ms after each pulse in spontaneous connectivity?
+- **Q18.** Accept D19? It would make the burst-removed analysis primary, set `drop_symmetric=False`, and make `cch_jitter` the primary method.
 
 Resolved 2026-10-03:
 

@@ -428,3 +428,16 @@ The Monte-Carlo p-value is stored alongside as `extra["p_empirical"]`.
 **Why.** Shared stimulus drive makes unconnected units co-fire. In the "stim null" benchmark scenario, STTC called 32 % of unconnected pairs connected.
 
 **Default.** `meagraph graph` drops spikes from 1 ms before each pulse to 200 ms after its offset whenever the recording has stimulation events. 200 ms covers the stimulus-evoked network bursts seen in the associative file, but the value is provisional. Evoked responses themselves are the subject of the Phase 5 stimulus-triggered estimator.
+
+---
+
+## D19. Defaults suggested by the benchmark
+
+**Status:** Proposed 2026-10-05 (awaiting owner approval; current defaults unchanged)
+
+From the full benchmark (`docs/METHODS.md` § Validation; `docs/benchmark/benchmark.csv`):
+
+1. **Make the burst-removed analysis primary; report "robust" as a conservative subset.** Bursts lowered recall but produced no false edges in any null scenario. Removing burst periods restored recall, for example 0.66 vs 0.49 for `cch_jitter` at 2 min. Requiring both analyses cut recall to 0.24 at 2 min in exchange for about 2 points of precision. This would change D14.
+2. **Set `cch_hollow`'s `drop_symmetric` default to False.** The legacy common-input rule removed 6 of 12 reciprocal connections, while all 119 one-way connections were found. Common input is better handled by model-based methods (Phase 5 GLM).
+3. **Use `cch_jitter` as the primary method,** with `cch_hollow` and `sttc` as supporting evidence. `cch_jitter` has the highest precision (0.94–0.97), a delay for every edge, and 0 false edges in every null scenario. STTC must never be applied to stimulation periods (52 % false edges under shared drive).
+4. **Recording length (for experiment design).** About 30 min of spontaneous activity recovers about 95 % of connections at transmission probability 0.03. 10 min recovers about 72 %.

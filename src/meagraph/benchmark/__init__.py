@@ -84,28 +84,48 @@ def scenarios(durations_s: Sequence[float] = (120, 300, 600, 1800), weights: Seq
     return out
 
 
+def _run_one(job) -> list[dict]:
+    """One simulated network, every method; module-level so worker processes can run it."""
+    name, cfg, seed, methods, method_overrides, burst_config = job
+    net = simulate_network(cfg.model_copy(update=dict(seed=seed)))
+    periods = network_bursts(net.trains, burst_config)
+    rows = []
+    for method in methods:
+        start = time.time()
+        bc = burst_controlled(net.trains, method, (method_overrides or {}).get(method), bursts=periods)
+        base = dict(scenario=name, seed=seed, method=method, duration_s=cfg.duration_s, weight=cfg.weight[1],
+                    bursts=cfg.burst_rate_hz > 0, connection_prob=cfg.connection_prob, seconds=round(time.time() - start, 2))  # fmt: skip
+        for spikes in ("all", "no_bursts", "robust"):
+            rows.append({**base, "spikes": spikes, **score(getattr(bc, spikes), net)})
+    return rows
+
+
 def run_benchmark(
     scenario_list: Iterable[tuple[str, NetworkConfig]],
     methods: Sequence[str] = ("cch_hollow", "cch_jitter", "sttc"),
     seeds: Sequence[int] = (0, 1, 2),
     method_overrides: dict[str, dict] | None = None,
     burst_config: BurstConfig | None = None,
+    n_jobs: int = 1,
     progress=print,
 ) -> list[dict]:
-    rows = []
-    for name, cfg in scenario_list:
-        for seed in seeds:
-            net = simulate_network(cfg.model_copy(update=dict(seed=seed)))
-            periods = network_bursts(net.trains, burst_config)
-            for method in methods:
-                start = time.time()
-                bc = burst_controlled(net.trains, method, (method_overrides or {}).get(method), bursts=periods)
-                base = dict(scenario=name, seed=seed, method=method, duration_s=cfg.duration_s, weight=cfg.weight[1],
-                            bursts=cfg.burst_rate_hz > 0, connection_prob=cfg.connection_prob, seconds=round(time.time() - start, 2))  # fmt: skip
-                for spikes in ("all", "no_bursts", "robust"):
-                    rows.append({**base, "spikes": spikes, **score(getattr(bc, spikes), net)})
+    """Every (scenario, seed) pair is one job; ``n_jobs`` > 1 runs them in worker processes."""
+    jobs = [(name, cfg, seed, tuple(methods), method_overrides, burst_config) for name, cfg in scenario_list for seed in seeds]
+    rows: list[dict] = []
+    if n_jobs > 1:
+        from concurrent.futures import ProcessPoolExecutor
+
+        with ProcessPoolExecutor(n_jobs) as pool:
+            results = pool.map(_run_one, jobs)
+            for k, (job, job_rows) in enumerate(zip(jobs, results), 1):
+                rows.extend(job_rows)
+                if progress:
+                    progress(f"[{k}/{len(jobs)}] {job[0]} seed {job[2]}")
+    else:
+        for k, job in enumerate(jobs, 1):
+            rows.extend(_run_one(job))
             if progress:
-                progress(f"{name} seed {seed} done")
+                progress(f"[{k}/{len(jobs)}] {job[0]} seed {job[2]}")
     return rows
 
 
