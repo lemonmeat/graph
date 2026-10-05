@@ -16,5 +16,3 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 
-# Exception: the legacy spikes.py outputs are the regression baseline (DECISIONS.md D7)
-!tests/data/legacy_baseline/*.spikes.h5
