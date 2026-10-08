@@ -38,7 +38,8 @@ class DetectionConfig(BaseModel):
     reject_rebound: bool = True
     # Stimulation (Q9): blank each channel from pulse onset - blank_pre_ms until its artifact has
     # recovered, at least recovery_min_post_ms and at most recovery_max_post_ms after pulse offset.
-    # The stimulated electrode (StimEvents.site) is excluded.
+    # A site given for a whole output (StimEvents.site) is excluded from detection. Sites known per
+    # pulse (a stimulation log, D25) stay in: each is blanked for recovery_max_post_ms after its own pulses.
     blank_pre_ms: PositiveFloat = 1.0
     guard_ms: float = 1.0  # peaks this soon after a window are dropped
     recovery_min_post_ms: PositiveFloat = 1.0
@@ -103,6 +104,13 @@ def _blanking(recording: BaseRecording, stim: Sequence[StimEvents], cfg: Detecti
         )  # fmt: skip
         recoveries[s.source] = dict(zip(rec.channel_ids, rec.recovery_ms.tolist()))
         windows = pulse_windows(recording, s, cfg.blank_pre_ms, rec.post_ms())
+        if s.pulse_sites is not None:
+            # The stimulated electrode recovers slowest from its own pulse: blank it for the maximum.
+            longest = pulse_windows(recording, s, cfg.blank_pre_ms, cfg.recovery_max_post_ms)
+            row = {c: k for k, c in enumerate(ids)}
+            for p, site in enumerate(s.pulse_sites):
+                if site in row:
+                    windows[row[site], p, 1] = max(windows[row[site], p, 1], longest[p, 1])
         for k, c in enumerate(ids):
             per_channel[c].append(windows[k])
     return {c: merge_windows(np.concatenate(w), n) for c, w in per_channel.items()}, recoveries

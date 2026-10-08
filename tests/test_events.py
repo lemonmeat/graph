@@ -68,7 +68,7 @@ def test_session_assigns_stim_site(mcs_file):
 
 
 def test_session_rejects_unknown_site_or_source(mcs_file):
-    with pytest.raises(ValueError, match="not a channel"):
+    with pytest.raises(ValueError, match="not channels"):
         load_session(mcs_file[0], stim_site="99")
     with pytest.raises(KeyError, match="STG 2"):
         load_session(mcs_file[0], stim_site={"STG 2": "47"})

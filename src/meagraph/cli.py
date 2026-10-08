@@ -23,6 +23,23 @@ def _stim_site(values: list[str] | None) -> str | dict[str, str] | None:
     return {k.strip().upper(): v.strip() for k, v in pairs}
 
 
+def _stimlog(value: str | None) -> str | None:
+    """``--stimlog``: "auto" (default) finds the log next to the recording; "none" ignores logs."""
+    return None if value is not None and value.lower() == "none" else (value or "auto")
+
+
+def _session(path: str, args: argparse.Namespace):
+    """Open a recording with the session options shared by several commands, and report the log."""
+    from meagraph.io import load_session
+
+    session = load_session(path, probe=args.probe, stim_site=_stim_site(args.stim_site), stimlog=_stimlog(args.stimlog))
+    if session.stimlog is not None:
+        print(f"  stimulation log: {session.stimlog.path.name}")
+        for a in session.alignment:
+            print(f"    {a.summary()}")
+    return session
+
+
 def _recordings(paths: list[str]) -> list[str]:
     """Drop legacy ``*.spikes.h5`` sidecars that shell globs like ``*.h5`` pick up."""
     keep = [p for p in paths if not p.endswith(".spikes.h5")]
@@ -33,11 +50,18 @@ def _recordings(paths: list[str]) -> list[str]:
 
 def _info(args: argparse.Namespace) -> int:
     from meagraph.io.inventory import format_inventory, inspect_file
+    from meagraph.io.stimlog import find_stimlog
 
     for i, path in enumerate(_recordings(args.paths)):
         if i:
             print()
         print(format_inventory(inspect_file(path, args.recording_index)))
+        try:
+            log = find_stimlog(path)
+        except ValueError as exc:
+            print(f"  stimulation log: {exc}")
+        else:
+            print(f"  stimulation log: {log.name if log else 'none found'}")
     return 0
 
 
@@ -52,12 +76,11 @@ def _probes(args: argparse.Namespace) -> int:
 
 
 def _audit(args: argparse.Namespace) -> int:
-    from meagraph.io import load_session
     from meagraph.stimulation import audit_stimulation, format_audit
 
     for path in _recordings(args.paths):
-        session = load_session(path, probe=args.probe, stim_site=_stim_site(args.stim_site))
         print(Path(path).name)
+        session = _session(path, args)
         if not session.stim:
             print("  no stimulation events")
         for stim in session.stim:
@@ -68,24 +91,24 @@ def _audit(args: argparse.Namespace) -> int:
 def _detect(args: argparse.Namespace) -> int:
     from meagraph.detect import DetectionConfig, detect_spikes, save_detection
     from meagraph.detect.store import default_detection_folder
-    from meagraph.io import load_session
 
     config = DetectionConfig(n_jobs=args.n_jobs)
     for path in _recordings(args.paths):
         start = time.time()
-        session = load_session(path, probe=args.probe, stim_site=_stim_site(args.stim_site))
+        print(Path(path).name)
+        session = _session(path, args)
         result = detect_spikes(session.recording, session.stim, config)
         out = Path(args.out) if args.out else default_detection_folder(path)
         save_detection(result, out, inputs=[path], overwrite=args.overwrite)
         n = result.trains.n_spikes()
         print(
-            f"{Path(path).name}\n  {int(n.sum())} spikes on {int((n > 0).sum())} channels in "
+            f"  {int(n.sum())} spikes on {int((n > 0).sum())} channels in "
             f"{time.time() - start:.0f} s; active channels (QC): {list(result.active_channels) or 'none'}"
         )
         if result.excluded:
             print(f"  excluded: {result.excluded}")
-        if session.stim and all(s.site is None for s in session.stim):
-            print("  note: no --stim-site given, so no stimulating electrode was excluded")
+        if session.stim and all(s.sites is None for s in session.stim):
+            print("  note: no --stim-site or stimulation log, so no stimulating electrode was excluded or extra-blanked")
         print(f"  wrote {out}")
     return 0
 
@@ -199,6 +222,8 @@ def build_parser() -> argparse.ArgumentParser:
     def session_args(p):
         p.add_argument("--probe", default=DEFAULT_PROBE, help="probe spec name or YAML path (see `meagraph probes`)")
         p.add_argument("--stim-site", action="append", help="stimulated electrode: '47', or 'STG 1=47' per output")
+        p.add_argument("--stimlog", default="auto",
+                       help="stimulation log with per-pulse sites: 'auto' (default) finds <tag>.stimlog.csv next to the recording; a path; or 'none'")
 
     p = sub.add_parser("info", help="summarise the streams, events and spike streams in MCS .h5 files")
     p.add_argument("paths", nargs="+")

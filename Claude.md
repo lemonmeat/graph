@@ -33,6 +33,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - Elephant TSPE returns (target, source) matrices; meagraph transposes. Its `normalize` option has a delay-indexing bug; not used. A strong excitatory i→j makes j→i score negative (reverse artefact).
   - The published CFP width rule (≥ 5 ms at 80 % of peak) rejects monosynaptic (~1 ms) peaks; CFP delays at the 0.5 ms boundary mean a peak at or before zero lag.
 - **Kumar et al. 2026 comparison** (2026-10-05, D23/D24 Proposed): `cch_gauss2` reproduces the paper's two-Gaussian weight (no test; NeuroExplorer normalization and lag range unknown). Threshold/sorting debate: keep 5σ and no sorting (4σ gives no power gain; 2.7σ is ~96 % noise; waveforms show no separable units at 10 kHz).
+- **Stimulation logs** (2026-10-08, D25 Proposed): `meagraph.io.stimlog` reads `<tag>.stimlog.csv` from the `mea-stim-protocols` script (C#, McsUsbNet), finds it by tag next to the recording, matches it to recorded STG events by order (checked by intervals; interval matching if counts differ), and sets `StimEvents.pulse_sites`. Per-pulse sites stay in detection with 50 ms blanking after their own pulses; `audit` checks each site against its artifact. `--stimlog auto|<path>|none`.
 - **Next is Phase 5:** GLM (NeMoS), stimulus-evoked estimator, transfer entropy if practical.
 - Decisions D1–D17 and D21 are Accepted (D11 superseded by D21). D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults), D20 (self-contained result folders) and D22 (TSPE, CFP, inhibition) are Proposed.
 - **Legacy scripts retired** 2026-10-05 (see Existing code below).
@@ -129,6 +130,7 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q16.** The synaptic window is [1, 4) ms (D14). In DIV142, the 32→14 correlogram peaks at about 6 ms. Should a wider window be used, or a sensitivity analysis run?
 - **Q17.** Accept D18, excluding spikes up to 200 ms after each pulse in spontaneous connectivity?
 - **Q20.** For `cch_gauss2`: which NeuroExplorer normalization and lag range did the original analysis use? Accept D24 (keep 5σ, no sorting; record at 20 kHz in future)?
+- **Q21.** Accept D25 (per-pulse sites from stimulation logs; stimulated electrodes kept, blanked 50 ms after their own pulses)?
 - **Q19.** Accept the D22 choices (inhibition model, TSPE significance and reverse rule, CFP test, CFP width rule, CFP boundary-delay rule)?
 - **Q18.** Accept D19? It would make the burst-removed analysis primary, set `drop_symmetric=False`, and make `cch_jitter` the primary method.
 

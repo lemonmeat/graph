@@ -21,3 +21,6 @@ class SessionConfig(BaseModel):
     # The stimulated electrode is not recorded in MCS files. Either one electrode id for every
     # STG output, or a mapping such as {"STG 1": "47"}.
     stim_site: str | dict[str, str] | None = None
+    # Per-pulse sites from a stimulation log (meagraph.io.stimlog): "auto" finds <tag>.stimlog.csv
+    # next to the recording, a path names one, None ignores logs.
+    stimlog: str | None = "auto"

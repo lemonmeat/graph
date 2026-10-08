@@ -221,6 +221,33 @@ This file uses both STG outputs:
 | exp3 | 5.0–5.3 ms | 5.4–6.8 ms | the stimulating electrode, 9.3 ms (12) and 10.8 ms (47) |
 | DIV142 associative | 6.6–6.8 ms | 7.1 ms | 17.1 ms (56, STG 2) |
 
+## Stimulation logs: per-pulse sites (`<tag>.stimlog.csv`)
+
+MCS files record when each STG output fired, but not which electrode it was routed to. The stimulation script (`mea-stim-protocols`, McsUsbNet) writes a log next to the recording; `meagraph.io.stimlog` reads it (DECISIONS.md D25).
+
+**Finding the log.** Multi Channel Experimenter names recordings `<start time><name typed in>_<device>.h5`. A log is used if it is named `<recording name>.stimlog.csv`, or if its tag (file name without `.stimlog.csv`) appears in the recording's name, e.g. `Day 143 Random 1.stimlog.csv` for `2026-10-08T12-00-00Day 143 Random 1_E-00303.h5`. If several tags appear, the longest wins; a tie is an error. Pass `--stimlog <path>` to name one, or `--stimlog none` to ignore logs.
+
+**Columns** (one row per pulse; `seq`, `stg`, `label` and `pc_elapsed_s` are required):
+
+| Column | Meaning |
+|---|---|
+| `trial` | trial number (two rows share it when STG 1 and STG 2 fire in one trial) |
+| `seq` | pulse number in the session, from 1 |
+| `stg` | stimulator output, 1 or 2 |
+| `api_index` | McsUsbNet electrode index |
+| `label` | MCS electrode label (e.g. `47`), the meagraph channel ID |
+| `amplitude`, `unit` | per-phase amplitude; `uV` in voltage mode, `nA` in current mode |
+| `phase_us` | phase duration of the biphasic pulse |
+| `offset_ms` | start of this pulse after the trial start |
+| `interval_s` | random wait between the previous trial's start and this one's |
+| `pc_time`, `pc_elapsed_s` | PC clock time of the trial, and seconds since the session started |
+
+`<tag>.notes.yaml` (optional) holds session metadata (culture, DIV, device, mode, seed, sites, start and end); it is kept with the log.
+
+**Matching to the recording.** Within each output, the k-th logged pulse is the k-th recorded `STG n Single Pulse Start` event. The PC clock is used only to check this: logged intervals (random, 2–4 s) must agree with the recorded ones within 0.1 s after allowing for a clock offset and drift. If the counts differ, pulses are matched one at a time by their intervals, and unmatched pulses are reported (their site is unknown). `meagraph audit` and `meagraph detect` print the result, and `meagraph audit` also checks that each logged site has the largest artifact on its own pulses.
+
+**Where the sites go.** Each pulse's site is stored in `StimEvents.pulse_sites` and in the `site` column of the detection folder's `stimulation.csv`.
+
 ## MCS online spike streams: `SegmentStream`
 
 | Stream | Label | Source | Entities |

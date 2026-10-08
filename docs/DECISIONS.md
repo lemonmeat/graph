@@ -557,3 +557,18 @@ For correlation methods, independent noise spikes add variance without adding si
 2. Record at 20 kHz in future sessions (the MEA2100-Mini supports it), and revisit sorting with a SpikeInterface sorter when SNR and spike counts allow; the threshold should then be lowered together with sorting, not alone.
 3. Optionally run 4σ as a sensitivity check on any key result (`DetectionConfig(threshold_sigma=4.0)`).
 4. Check adjacent electrodes for the same neuron recorded twice (zero-lag synchrony, e.g. 78–87) instead of sorting.
+
+---
+
+## D25. Per-pulse stimulation sites from a stimulation log
+
+**Status:** Proposed 2026-10-08 (implemented; the blanking choice in point 2 awaits the owner)
+
+**What was added.** `meagraph.io.stimlog` reads `<tag>.stimlog.csv` written by the stimulation script, finds it next to the recording (or takes `--stimlog`), and matches it to the recorded STG events (`docs/DATA_FORMAT.md`). `StimEvents.pulse_sites` holds one site per pulse; detection folders save it. `meagraph audit` checks each logged site against its artifact.
+
+**Choices made, for review:**
+
+1. **Matching by order, checked by intervals.** Within each output, the k-th logged pulse is the k-th recorded one if the counts agree and the logged and recorded intervals agree within 0.1 s after fitting an offset and a linear clock drift. Otherwise each logged pulse is matched to the recorded pulse its interval predicts (within 0.1 s), and the rest are reported unmatched. The 0.1 s tolerance is far below the 2 s minimum interval, so pulses cannot be confused. On a simulated 2,900-pulse session with a 7 s offset, 50 ppm drift, 3 ms jitter, missing and extra pulses, every pulse was matched correctly.
+2. **Stimulated electrodes stay in detection, with longer blanking on their own pulses.** With one site per output (`--stim-site`), that electrode is excluded entirely, as before. With per-pulse sites, excluding every stimulated electrode would remove up to 16 recording electrodes. Instead, each is blanked for `recovery_max_post_ms` (50 ms) after its own pulses, rather than for its measured recovery, because the stimulated electrode recovers slowest from its own pulse. Spontaneous connectivity is unaffected either way: it drops 200 ms after every pulse (D18).
+3. **Both kinds of site are not combined.** A recording uses `--stim-site` or a log, not both; giving both is an error.
+

@@ -30,6 +30,32 @@ class StimAudit:
     recovery: Recovery
     repeatability_r: float | None
     warnings: tuple[str, ...]
+    # Per-pulse sites (stimulation log): (logged site, its artifact rank among channels, 1 = largest,
+    # 0 = not checkable because several channels saturate; the channel with the largest artifact or
+    # "saturated"; number of that site's pulses)
+    site_check: tuple[tuple[str, int, str, int], ...] = ()
+
+
+def check_logged_sites(recording: BaseRecording, stim: StimEvents, n_trials: int = 10) -> tuple[tuple[str, int, str, int], ...]:
+    """For each logged site: does its own pulses' artifact peak on that electrode?
+
+    A mismatch points to a wrong electrode table or a wrong log-to-recording match. When every
+    channel saturates, the peaks tie and the check cannot decide.
+    """
+    if stim.pulse_sites is None:
+        return ()
+    sites = np.array(stim.pulse_sites, dtype=object)
+    out = []
+    for site in sorted({s for s in stim.pulse_sites if s}):
+        mine = stim.select(sites == site)
+        inferred = infer_site(recording, mine, n_trials=n_trials)
+        if len(inferred.saturated) > 1:  # several channels hit the ADC rail: artifact size cannot point to the site
+            out.append((site, 0, "saturated", mine.n))
+            continue
+        order = list(inferred.peak_uv)
+        rank = order.index(site) + 1 if site in order else 0
+        out.append((site, rank, order[0] if order else "", mine.n))
+    return tuple(out)
 
 
 def group_trains(onsets_s: np.ndarray, max_gap_s: float = 0.05) -> list[np.ndarray]:
@@ -73,6 +99,13 @@ def audit_stimulation(recording: BaseRecording, stim: StimEvents, **recovery_kwa
     site = infer_site(recording, stim)
     if stim.site is not None and site.site is not None and site.site != stim.site:
         warns.append(f"site given as {stim.site} but the artifact points to {site.site}")
+    site_check = check_logged_sites(recording, stim)
+    off = [c for c in site_check if c[1] > 1]
+    if any(c[1] == 0 for c in site_check):
+        warns.append("the array saturates on some sites' pulses, so the artifact cannot confirm those logged sites")
+    if off:
+        warns.append(f"{len(off)} of {len(site_check)} logged sites do not have the largest artifact on their own pulses "
+                     "(check the electrode table and the log match)")  # fmt: skip
     recovery = measure_recovery(recording, stim, **recovery_kwargs)
     unrecovered = int(np.isnan(recovery.recovery_ms).sum())
     if unrecovered:
@@ -90,6 +123,7 @@ def audit_stimulation(recording: BaseRecording, stim: StimEvents, **recovery_kwa
         recovery=recovery,
         repeatability_r=_repeatability(recording, stim),
         warnings=tuple(warns),
+        site_check=site_check,
     )
 
 
@@ -104,7 +138,7 @@ def format_audit(audit: StimAudit) -> str:
         f"from {audit.first_s:.2f} to {audit.last_s:.2f} s"
         if audit.train_interval_s is not None
         else f"{audit.source}: {audit.n_pulses} pulses",
-        f"  site: given {audit.site_given or 'not given'}; inferred {audit.site.site or 'none'} ({audit.site.reason})",
+        _site_line(audit),
         "  largest artifacts: " + ", ".join(f"{c} {v / 1000:.1f} mV" for c, v in top),
         f"  recovery after pulse offset ({rec.n_epochs} pulses): median {np.median(r):.1f} ms, "
         f"90th percentile {np.percentile(r, 90):.1f} ms; slowest "
@@ -112,7 +146,20 @@ def format_audit(audit: StimAudit) -> str:
         if r.size
         else f"  recovery: not measurable ({rec.n_epochs} usable pulses)",
     ]
+    for site, rank, top, n in audit.site_check:
+        if rank > 1:
+            lines.append(f"    logged site {site} ({n} pulses): artifact rank {rank or 'n/a'}, largest on {top}")
     if audit.repeatability_r is not None:
         lines.append(f"  artifact repeatability: median r = {audit.repeatability_r:.4f}")
     lines += [f"  WARNING: {w}" for w in audit.warnings]
     return "\n".join(lines)
+
+
+def _site_line(audit: StimAudit) -> str:
+    if audit.site_check:
+        agree = sum(1 for c in audit.site_check if c[1] == 1)
+        unchecked = sum(1 for c in audit.site_check if c[1] == 0)
+        text = (f"  sites: from the stimulation log, {len(audit.site_check)} sites; the logged electrode has the largest "
+                f"artifact for {agree} of {len(audit.site_check) - unchecked} checkable")  # fmt: skip
+        return text + (f" ({unchecked} not checkable: the array saturates)" if unchecked else "")
+    return f"  site: given {audit.site_given or 'not given'}; inferred {audit.site.site or 'none'} ({audit.site.reason})"

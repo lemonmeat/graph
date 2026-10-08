@@ -84,7 +84,7 @@ Every config is a frozen pydantic model next to the step that uses it, saved as 
 
 | Module | Responsibility |
 |---|---|
-| `io` | `McsH5Recording` (D1), event and segment decoding by ID (D4), MCS online spike streams (comparison only, D2), `inspect_file` inventory, legacy `*.spikes.h5` reader, `load_session`. `_mcs_layout.py` holds the HDF5 layout rules. |
+| `io` | `McsH5Recording` (D1), event and segment decoding by ID (D4), MCS online spike streams (comparison only, D2), `inspect_file` inventory, legacy `*.spikes.h5` reader, `load_session`. `_mcs_layout.py` holds the HDF5 layout rules., stimulation logs with per-pulse sites (`stimlog.py`, D25). |
 | `probe` | Probe specs (`probe/data/*.yaml` + map CSV), ProbeInterface probes, `attach_probe`, 3D positions and distances (D3, D8). |
 | `config` | YAML ↔ pydantic, provenance, `write_run_folder`. |
 | `spiketrains`, `intervals` | `SpikeTrains` (select, positions, `without_periods`, SI conversion); merging and membership of `[start, stop]` intervals. |

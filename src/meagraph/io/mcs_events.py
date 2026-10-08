@@ -45,8 +45,9 @@ class EventEntity:
 class StimEvents:
     """Stimulation times from one STG output.
 
-    The electrode that was stimulated is not stored in MCS files. ``site`` is supplied from
-    metadata (config) or by artifact inference, never read from the file.
+    The electrode that was stimulated is not stored in MCS files. It is supplied from metadata,
+    never read from the file: either one ``site`` for every pulse (``--stim-site``), or one site
+    per pulse in ``pulse_sites`` (from a stimulation log; "" where a pulse's site is unknown).
     """
 
     source: str
@@ -54,6 +55,13 @@ class StimEvents:
     onsets_s: np.ndarray
     offsets_s: np.ndarray | None
     site: str | None = None
+    pulse_sites: tuple[str, ...] | None = None
+
+    def __post_init__(self) -> None:
+        if self.pulse_sites is not None and len(self.pulse_sites) != self.onsets_s.size:
+            raise ValueError(f"{self.source}: {len(self.pulse_sites)} pulse sites for {self.onsets_s.size} pulses")
+        if self.pulse_sites is not None and self.site is not None:
+            raise ValueError(f"{self.source}: give one site for all pulses or one per pulse, not both")
 
     @property
     def n(self) -> int:
@@ -68,8 +76,28 @@ class StimEvents:
         """Pulse offsets, or the onsets when the file has no Stop events."""
         return self.onsets_s if self.offsets_s is None else self.offsets_s
 
+    @property
+    def sites(self) -> np.ndarray | None:
+        """The stimulated electrode of every pulse ("" if unknown), or None if no site is known."""
+        if self.pulse_sites is not None:
+            return np.array(self.pulse_sites, dtype=object)
+        if self.site is not None:
+            return np.full(self.n, self.site, dtype=object)
+        return None
+
     def with_site(self, site: str | None) -> StimEvents:
-        return replace(self, site=None if site is None else str(site))
+        return replace(self, site=None if site is None else str(site), pulse_sites=None)
+
+    def with_pulse_sites(self, sites) -> StimEvents:
+        return replace(self, site=None, pulse_sites=tuple("" if s is None else str(s) for s in sites))
+
+    def select(self, index) -> StimEvents:
+        """The pulses at ``index`` (indices or a boolean mask)."""
+        idx = np.arange(self.n)[index]
+        return replace(
+            self, onsets_s=self.onsets_s[idx], offsets_s=None if self.offsets_s is None else self.offsets_s[idx],
+            pulse_sites=None if self.pulse_sites is None else tuple(self.pulse_sites[i] for i in idx),
+        )  # fmt: skip
 
 
 def read_event_entities(path: str | Path, recording_index: int = 0) -> list[EventEntity]:

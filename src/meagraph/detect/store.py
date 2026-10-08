@@ -4,7 +4,8 @@ A result folder holds:
 - ``spikes.npz``: flat arrays ``unit_id``, ``time_s``, ``amplitude_uv``, ``waveform_uv`` (n, samples)
 - ``channels.csv``: one row per channel (position, spike count, rate, noise, QC, exclusion, recovery)
 - ``stimulation.csv``: one row per pulse (STG output, kind, onset, offset, site); header only
-  for spontaneous recordings
+  for spontaneous recordings. ``site`` is the stimulated electrode of that pulse, if known: one
+  site for a whole output (``--stim-site``) or one per pulse (a stimulation log)
 - ``config.yaml`` and ``provenance.json`` (see :func:`meagraph.config.write_run_folder`)
 """
 
@@ -75,8 +76,9 @@ def save_detection(result: DetectionResult, folder: str | Path, inputs: Sequence
         w.writerow(_STIM_COLUMNS)
         for s in result.stim:
             offsets = s.offsets_s if s.offsets_s is not None else np.full(s.n, np.nan)
-            for on, off in zip(s.onsets_s, offsets):
-                w.writerow([s.source, s.kind, repr(float(on)), "" if np.isnan(off) else repr(float(off)), s.site or ""])
+            sites = s.sites if s.sites is not None else [""] * s.n
+            for on, off, site in zip(s.onsets_s, offsets, sites):
+                w.writerow([s.source, s.kind, repr(float(on)), "" if np.isnan(off) else repr(float(off)), site])
     return out
 
 
@@ -89,7 +91,13 @@ def _read_stim(path: Path) -> tuple[StimEvents, ...]:
     out = []
     for (source, kind), g in groups.items():
         offsets = None if any(r["offset_s"] == "" for r in g) else np.array([float(r["offset_s"]) for r in g])
-        out.append(StimEvents(source, kind, np.array([float(r["onset_s"]) for r in g]), offsets, g[0]["site"] or None))
+        events = StimEvents(source, kind, np.array([float(r["onset_s"]) for r in g]), offsets)
+        sites = [r["site"] for r in g]
+        if len(set(sites)) == 1 and sites[0]:
+            events = events.with_site(sites[0])  # one site for the whole output
+        elif any(sites):
+            events = events.with_pulse_sites(sites)  # per pulse, from a stimulation log
+        out.append(events)
     return tuple(out)
 
 

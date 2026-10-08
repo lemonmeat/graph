@@ -57,9 +57,9 @@ class ViewerData:
         return self._stream_cache[label]
 
 
-def load_viewer_data(path, probe=DEFAULT_PROBE, stim_site=None, spikes_dir=None) -> ViewerData:
+def load_viewer_data(path, probe=DEFAULT_PROBE, stim_site=None, spikes_dir=None, stimlog="auto") -> ViewerData:
     """Spikes come from ``spikes_dir``, else the recording's ``meagraph detect`` result."""
-    session = load_session(path, probe=probe, stim_site=stim_site)
+    session = load_session(path, probe=probe, stim_site=stim_site, stimlog=stimlog)
     rec = session.recording
     electrodes = tuple(str(c) for c in rec.channel_ids)
     grid = np.column_stack([rec.get_property(k) for k in ("grid_row", "grid_col", "grid_layer")])
@@ -236,11 +236,12 @@ def main(args: argparse.Namespace) -> int:
     """Entry point for ``meagraph view`` (arguments are parsed in meagraph.cli)."""
     import matplotlib
 
-    from meagraph.cli import _stim_site
+    from meagraph.cli import _stim_site, _stimlog
 
     if args.save:
         matplotlib.use("Agg")
-    data = load_viewer_data(args.path, probe=args.probe, stim_site=_stim_site(args.stim_site), spikes_dir=args.spikes)
+    data = load_viewer_data(args.path, probe=args.probe, stim_site=_stim_site(args.stim_site), spikes_dir=args.spikes,
+                            stimlog=_stimlog(args.stimlog))  # fmt: skip
     viewer = Viewer(data, t0=args.t0, win=args.win, electrode=args.electrode, stream=args.stream, bandpass=args.bandpass)
     if args.save:
         viewer.fig.savefig(args.save, dpi=120)

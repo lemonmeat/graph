@@ -77,6 +77,7 @@ def write_mcs_h5(
     exponent: int = -12,
     unit: str = "V",
     stim_onsets_us=None,
+    stim2_onsets_us=None,
     stim_offset_delay_us: int = 3000,
     info_event_order=None,
     detector_spikes_us=None,
@@ -123,9 +124,11 @@ def write_mcs_h5(
             info[row] = (k + 1, 0, f"E-00303  {STG_EVENT_LABELS[k]}".encode(), b"Int", 4, str(stg).encode(),
                          f"E-00303 Sideband Data {stg - 70}".encode())  # fmt: skip
         events.create_dataset("InfoEvent", data=info)
-        if stim_onsets_us is not None:
-            onsets = np.asarray(stim_onsets_us, np.int64)
-            for event_id, ts in ((1, onsets), (2, onsets + stim_offset_delay_us)):
+        for start_id, onsets_us in ((1, stim_onsets_us), (5, stim2_onsets_us)):  # STG 1 and STG 2 Start/Stop
+            if onsets_us is None:
+                continue
+            onsets = np.asarray(onsets_us, np.int64)
+            for event_id, ts in ((start_id, onsets), (start_id + 1, onsets + stim_offset_delay_us)):
                 block = np.zeros((5, ts.size), np.int64)
                 block[0] = ts
                 events.create_dataset(f"EventEntity_{event_id}", data=block)
