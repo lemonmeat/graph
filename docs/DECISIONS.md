@@ -571,4 +571,17 @@ For correlation methods, independent noise spikes add variance without adding si
 1. **Matching by order, checked by intervals.** Within each output, the k-th logged pulse is the k-th recorded one if the counts agree and the logged and recorded intervals agree within 0.1 s after fitting an offset and a linear clock drift. Otherwise each logged pulse is matched to the recorded pulse its interval predicts (within 0.1 s), and the rest are reported unmatched. The 0.1 s tolerance is far below the 2 s minimum interval, so pulses cannot be confused. On a simulated 2,900-pulse session with a 7 s offset, 50 ppm drift, 3 ms jitter, missing and extra pulses, every pulse was matched correctly.
 2. **Stimulated electrodes stay in detection, with longer blanking on their own pulses.** With one site per output (`--stim-site`), that electrode is excluded entirely, as before. With per-pulse sites, excluding every stimulated electrode would remove up to 16 recording electrodes. Instead, each is blanked for `recovery_max_post_ms` (50 ms) after its own pulses, rather than for its measured recovery, because the stimulated electrode recovers slowest from its own pulse. Spontaneous connectivity is unaffected either way: it drops 200 ms after every pulse (D18).
 3. **Both kinds of site are not combined.** A recording uses `--stim-site` or a log, not both; giving both is an error.
+4. **Finding a log by time.** Besides a matching name or tag, a log with the stimulation script's default name (its own start time) is used if it started while the recording ran. Added 2026-10-08 for `2026-10-08T19-17-47.stimlog.csv` next to `2026-10-08T19-17-36Flex_Electronics_Andre_Random1_2.h5`.
+
+**First real log (2026-10-08, device E-00278, 10 kHz).** All 186 pulses matched by order (timing within 26 ms). The audit could not confirm any logged site from the artifact: the artifact is not site-specific (electrode 57 shows a large artifact on every pulse; every electrode goes flat during pulses, consistent with hardware blanking), and the pulses were ±1 mV. The recording also has almost no spikes (noise 9.4 µV; 0.3 negative crossings per electrode per minute away from pulses), so no electrode passes the QC and no graph can be built.
+
+---
+
+## D26. Discard crossings just before blanked windows too (proposal, not implemented)
+
+**Status:** Proposed 2026-10-08 (detection unchanged until the owner decides)
+
+**Problem.** Bridging replaces each stimulation window with a straight line. When the artifact leaves a large offset, the line has a sharp corner at its start, and the zero-phase filter spreads that corner's ringing about 2 ms in both directions. Detection already discards peaks up to `guard_ms` (1 ms) after a window, but not before one. In the 2026-10-08 recording, about 300 positive crossings per 4 electrodes fell 1–2 ms before the recorded pulse onset, where the raw signal had not yet changed; they count against the polarity QC. Separately, in the DIV142 associative recordings a third of electrode-pulses deviate from 2.9 ms before the recorded onset, earlier than `blank_pre_ms` (1 ms).
+
+**Proposal.** A symmetric guard: also discard peaks (and exclude QC events) within 2 ms before each window; and measure, per recording, how long before the recorded onset the raw signal starts to change, to set `blank_pre_ms`. This changes detection output on stimulation recordings, so the detection snapshot would be regenerated with the change.
 

@@ -225,7 +225,7 @@ This file uses both STG outputs:
 
 MCS files record when each STG output fired, but not which electrode it was routed to. The stimulation script (`mea-stim-protocols`, McsUsbNet) writes a log next to the recording; `meagraph.io.stimlog` reads it (DECISIONS.md D25).
 
-**Finding the log.** Multi Channel Experimenter names recordings `<start time><name typed in>_<device>.h5`. A log is used if it is named `<recording name>.stimlog.csv`, or if its tag (file name without `.stimlog.csv`) appears in the recording's name, e.g. `Day 143 Random 1.stimlog.csv` for `2026-10-08T12-00-00Day 143 Random 1_E-00303.h5`. If several tags appear, the longest wins; a tie is an error. Pass `--stimlog <path>` to name one, or `--stimlog none` to ignore logs.
+**Finding the log.** Multi Channel Experimenter names recordings `<start time><name typed in>_<device>.h5`. A log is used if it is named `<recording name>.stimlog.csv`, or if its tag (file name without `.stimlog.csv`) appears in the recording's name, e.g. `Day 143 Random 1.stimlog.csv` for `2026-10-08T12-00-00Day 143 Random 1_E-00303.h5`. If several tags appear, the longest wins; a tie is an error. Otherwise a log with the script's default name (its own start time, `YYYY-MM-DDTHH-MM-SS.stimlog.csv`) is used if it started while the recording ran, judged from the time at the front of the recording's name and its duration; two such logs are an error. Pass `--stimlog <path>` to name one, or `--stimlog none` to ignore logs.
 
 **Columns** (one row per pulse; `seq`, `stg`, `label` and `pc_elapsed_s` are required):
 
@@ -244,7 +244,9 @@ MCS files record when each STG output fired, but not which electrode it was rout
 
 `<tag>.notes.yaml` (optional) holds session metadata (culture, DIV, device, mode, seed, sites, start and end); it is kept with the log.
 
-**Matching to the recording.** Within each output, the k-th logged pulse is the k-th recorded `STG n Single Pulse Start` event. The PC clock is used only to check this: logged intervals (random, 2–4 s) must agree with the recorded ones within 0.1 s after allowing for a clock offset and drift. If the counts differ, pulses are matched one at a time by their intervals, and unmatched pulses are reported (their site is unknown). `meagraph audit` and `meagraph detect` print the result, and `meagraph audit` also checks that each logged site has the largest artifact on its own pulses.
+**Matching to the recording.** Within each output, the k-th logged pulse is the k-th recorded `STG n Single Pulse Start` event. The PC clock is used only to check this: logged intervals (random, 2–4 s) must agree with the recorded ones within 0.1 s after allowing for a clock offset and drift. If the counts differ, pulses are matched one at a time by their intervals, and unmatched pulses are reported (their site is unknown). `meagraph audit` and `meagraph detect` print the result, and `meagraph audit` also checks that each logged site has the largest artifact on its own pulses. That check only works when the artifact is site-specific: with hardware blanking of the stimulated electrode or very small pulses it fails for reasons unrelated to the log (see D25).
+
+**Marker events.** When the script sets the sideband marker bit, `STG n Marker Start/Stop` events are recorded at the same times as the pulses. meagraph reads them but does not count them as extra pulses.
 
 **Where the sites go.** Each pulse's site is stored in `StimEvents.pulse_sites` and in the `site` column of the detection folder's `stimulation.csv`.
 

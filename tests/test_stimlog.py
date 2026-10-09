@@ -161,3 +161,45 @@ def test_audit_checks_logged_sites_against_the_artifact():
     assert [c[1] for c in good] == [1, 1, 1, 1]
     wrong = check_logged_sites(rec, stim.with_pulse_sites([ids[(k + 1) % 4] for k in range(onsets.size)]))
     assert all(c[1] != 1 for c in wrong)  # a shifted table is caught
+
+
+def test_find_stimlog_by_start_time(make_mcs_file):
+    path, _ = make_mcs_file(n_samples=600_000)  # 60.5 s on the recording clock (Duration)
+    rec = path.rename(path.with_name("2026-10-08T19-17-36Flex_Electronics_Andre_Random1_2.h5"))
+    assert find_stimlog(rec) is None
+    write_log(rec.with_name("2026-10-08T19-15-00.stimlog.csv"), [(1, "47", 1.0, 0)])  # started before the recording
+    write_log(rec.with_name("2026-10-08T19-19-00.stimlog.csv"), [(1, "47", 1.0, 0)])  # started after it ended
+    assert find_stimlog(rec) is None
+    inside = write_log(rec.with_name("2026-10-08T19-17-47.stimlog.csv"), [(1, "47", 1.0, 0)])
+    assert find_stimlog(rec) == inside  # the script's default name, started during the recording
+    write_log(rec.with_name("2026-10-08T19-18-10.stimlog.csv"), [(1, "47", 1.0, 0)])
+    with pytest.raises(ValueError, match="several stimulation logs started during"):
+        find_stimlog(rec)
+
+
+def test_marker_events_are_not_counted_as_pulses():
+    from meagraph.cli import _pulses
+
+    on = np.array([1.0, 2.0])
+    stim = [StimEvents("STG 1", "Single Pulse", on, on + 0.001), StimEvents("STG 1", "Marker", on, on + 0.001),
+            StimEvents("STG 2", "Marker", on, on + 0.001)]  # fmt: skip
+    kept = _pulses(stim)
+    assert [(s.source, s.kind) for s in kept] == [("STG 1", "Single Pulse"), ("STG 2", "Marker")]
+
+
+def test_graph_explains_why_there_is_no_graph(tmp_path, capsys):
+    from meagraph.detect import DetectionConfig, DetectionResult
+    from meagraph.detect.threshold import ChannelQC
+    from meagraph.spiketrains import SpikeTrains
+
+    trains = SpikeTrains.from_dict({"47": [1.0, 2.0], "12": [1.5]}, 0.0, 10.0)
+    det = DetectionResult(
+        trains=trains, amplitudes_uv={u: np.zeros(t.size, np.float32) for u, t in trains.as_dict().items()},
+        waveforms_uv={u: np.zeros((t.size, 30), np.float32) for u, t in trains.as_dict().items()},
+        noise_uv={"47": 9.0, "12": 9.5}, excluded={}, recovery_ms={}, config=DetectionConfig(),
+        qc=ChannelQC(("47", "12"), np.array([2, 1]), np.array([80, 90]), np.ones(2), np.zeros(2, bool)),
+    )  # fmt: skip
+    folder = save_detection(det, tmp_path / "results" / "rec" / "detect")
+    assert main(["graph", str(folder)]) == 0
+    out = capsys.readouterr().out
+    assert "0 of 2 electrodes passed the signal-quality check" in out and "3 negative vs 170 positive" in out

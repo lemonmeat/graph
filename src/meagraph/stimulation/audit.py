@@ -104,8 +104,9 @@ def audit_stimulation(recording: BaseRecording, stim: StimEvents, **recovery_kwa
     if any(c[1] == 0 for c in site_check):
         warns.append("the array saturates on some sites' pulses, so the artifact cannot confirm those logged sites")
     if off:
-        warns.append(f"{len(off)} of {len(site_check)} logged sites do not have the largest artifact on their own pulses "
-                     "(check the electrode table and the log match)")  # fmt: skip
+        warns.append(f"{len(off)} of {len(site_check)} logged sites do not have the largest artifact on their own pulses. "
+                     "Causes: a wrong electrode table or log match, or an artifact that is not site-specific "
+                     "(low amplitude, hardware blanking of the stimulated electrode)")  # fmt: skip
     recovery = measure_recovery(recording, stim, **recovery_kwargs)
     unrecovered = int(np.isnan(recovery.recovery_ms).sum())
     if unrecovered:

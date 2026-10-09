@@ -40,6 +40,13 @@ def _session(path: str, args: argparse.Namespace):
     return session
 
 
+def _pulses(stim):
+    """Stimulation events that are pulses. An output's Marker events (recorded when the script sets
+    the sideband marker bit) repeat its pulse times, so they are left out where pulses exist."""
+    with_pulses = {s.source for s in stim if s.kind == "Single Pulse"}
+    return [s for s in stim if s.kind == "Single Pulse" or s.source not in with_pulses]
+
+
 def _recordings(paths: list[str]) -> list[str]:
     """Drop legacy ``*.spikes.h5`` sidecars that shell globs like ``*.h5`` pick up."""
     keep = [p for p in paths if not p.endswith(".spikes.h5")]
@@ -83,7 +90,7 @@ def _audit(args: argparse.Namespace) -> int:
         session = _session(path, args)
         if not session.stim:
             print("  no stimulation events")
-        for stim in session.stim:
+        for stim in _pulses(session.stim):
             print(format_audit(audit_stimulation(session.recording, stim)))
     return 0
 
@@ -114,6 +121,8 @@ def _detect(args: argparse.Namespace) -> int:
 
 
 def _graph(args: argparse.Namespace) -> int:
+    import numpy as np
+
     from meagraph.connectivity.pipeline import GraphConfig, graphs_from_detection, save_burst_controlled
     from meagraph.detect.store import find_detection, load_detection
 
@@ -125,12 +134,19 @@ def _graph(args: argparse.Namespace) -> int:
     config = GraphConfig(channels=args.channels, exclude_stim_post_ms=args.exclude_stim_ms)
     chosen = detection.active_channels if args.channels == "active" else detection.trains.unit_ids
     if len(chosen) < 2:
-        print(f"{folder}: {len(chosen)} {args.channels} channel(s); at least 2 are needed")
+        print(f"{folder.parent.name}: {len(chosen)} {args.channels} channel(s); at least 2 are needed")
+        if args.channels == "active":
+            qc = detection.qc
+            print(f"  no graph: {int(qc.active.sum())} of {len(qc.channel_ids)} electrodes passed the signal-quality check "
+                  f"(negative crossings must clearly outnumber positive ones; see channels.csv, columns qc_negative and qc_positive)")
+            print(f"  median noise {np.median(list(detection.noise_uv.values())):.1f} uV; "
+                  f"{int(qc.n_negative.sum())} negative vs {int(qc.n_positive.sum())} positive events over all electrodes")
+            print("  `--channels all` builds a graph from every electrode anyway, but without the check its edges may be noise")
         return 0
     graphs = graphs_from_detection(detection, methods=args.method, config=config)
     print(f"{folder.parent.name}: {len(chosen)} {args.channels} channels {list(chosen)}")
     if detection.stim and config.exclude_stim_post_ms > 0:
-        n_pulses = sum(s.n for s in detection.stim)
+        n_pulses = sum(s.n for s in _pulses(detection.stim))
         print(f"  excluded {n_pulses} stimulation pulses (pulse to +{config.exclude_stim_post_ms:g} ms)")
     for method, bc in graphs.items():
         out = save_burst_controlled(bc, folder.parent / f"graph_{method}", config, inputs=[folder / "spikes.npz"], overwrite=True)

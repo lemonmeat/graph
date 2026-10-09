@@ -14,9 +14,13 @@ and the unmatched ones are reported.
 from __future__ import annotations
 
 import csv
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+
+import h5py
 
 import numpy as np
 import yaml
@@ -24,6 +28,7 @@ import yaml
 from meagraph.io.mcs_events import StimEvents
 
 SUFFIX = ".stimlog.csv"
+_STAMP = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})")  # start time at the front of a file name
 _REQUIRED = ("seq", "stg", "label", "pc_elapsed_s")
 
 
@@ -105,20 +110,51 @@ def find_stimlog(recording_path: str | Path) -> Path | None:
     1. ``<recording name>.stimlog.csv``;
     2. otherwise the log whose tag (its name without ``.stimlog.csv``) appears in the recording's
        name, as Multi Channel Experimenter adds a start time before and the device ID after the
-       name typed in. If several tags appear, the longest wins; a tie is an error.
+       name typed in. If several tags appear, the longest wins; a tie is an error;
+    3. otherwise a log named by its own start time (the stimulation script's default name,
+       ``YYYY-MM-DDTHH-MM-SS.stimlog.csv``) that started while the recording ran, judged from the
+       recording's start time at the front of its name and its duration. Several such logs are an error.
     """
     rec = Path(recording_path)
     exact = rec.with_name(rec.stem + SUFFIX)
     if exact.exists():
         return exact
-    hits = [p for p in rec.parent.glob("*" + SUFFIX) if p.name[: -len(SUFFIX)] and p.name[: -len(SUFFIX)] in rec.stem]
-    if not hits:
+    logs = sorted(rec.parent.glob("*" + SUFFIX))
+    hits = [p for p in logs if _tag(p) and _tag(p) in rec.stem]
+    if hits:
+        longest = max(len(p.name) for p in hits)
+        best = [p for p in hits if len(p.name) == longest]
+        if len(best) > 1:
+            raise ValueError(f"several stimulation logs match {rec.name}: {[p.name for p in best]}; pass one with --stimlog")
+        return best[0]
+    start = _stamp(rec.name)
+    if start is None:
         return None
-    longest = max(len(p.name) for p in hits)
-    best = [p for p in hits if len(p.name) == longest]
-    if len(best) > 1:
-        raise ValueError(f"several stimulation logs match {rec.name}: {[p.name for p in best]}; pass one with --stimlog")
-    return best[0]
+    end = start + _duration_s(rec)
+    stamped = [p for p in logs if re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}", _tag(p))]  # the script's default names
+    during = [p for p in stamped if start <= _stamp(p.name) <= end]
+    if len(during) > 1:
+        raise ValueError(f"several stimulation logs started during {rec.name}: {[p.name for p in during]}; pass one with --stimlog")
+    return during[0] if during else None
+
+
+def _tag(path: Path) -> str:
+    return path.name[: -len(SUFFIX)]
+
+
+def _stamp(name: str) -> float | None:
+    """Start time encoded at the front of a file name, in seconds since the epoch."""
+    m = _STAMP.match(name)
+    return datetime.strptime(m.group(1), "%Y-%m-%dT%H-%M-%S").timestamp() if m else None
+
+
+def _duration_s(recording: Path) -> float:
+    """Recording length from the MCS file (``Recording_0`` Duration, in µs); 0 if unreadable."""
+    try:
+        with h5py.File(recording, "r") as f:
+            return float(f["Data/Recording_0"].attrs.get("Duration", 0)) * 1e-6
+    except (OSError, KeyError):
+        return 0.0
 
 
 def align_stimlog(stim: Sequence[StimEvents], log: StimLog, tolerance_s: float = 0.1) -> tuple[list[StimEvents], list[Alignment]]:
