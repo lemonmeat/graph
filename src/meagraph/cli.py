@@ -202,8 +202,10 @@ def _plot(args: argparse.Namespace) -> int:
     from meagraph.connectivity.pipeline import load_graph
 
     path = Path(args.path)
-    if path.is_file():  # a recording: its graph folder under results/
+    if path.suffix == ".h5":  # a recording (the file itself is not read): its graph folder under results/
         path = path.parent / "results" / path.stem / f"graph_{args.method}"
+    elif (path / f"graph_{args.method}").is_dir():  # results/<recording>
+        path = path / f"graph_{args.method}"
     if not (path / "result.json").exists():
         path = path / args.spike_set
     if not (path / "result.json").exists():
@@ -214,6 +216,7 @@ def _plot(args: argparse.Namespace) -> int:
     ccg, lags = cross_correlograms(saved.trains, params.get("bin_ms", 0.5), params.get("max_lag_ms", 30.0))
     recording = path.parent.parent.name
     fig = viz.plot_connectivity(res, ccg, lags, background_um=saved.detection.trains.positions_um,
+                                background_ids=saved.detection.trains.channel_ids or saved.detection.trains.unit_ids,
                                 title=f"{recording[:60]}\n{path.parent.name}/{path.name}")  # fmt: skip
     if args.save:
         fig.savefig(args.save, dpi=130)
@@ -273,8 +276,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="drop spikes from each pulse to this long after it (stimulation recordings; 0 keeps them)")
     p.set_defaults(func=_graph)
 
-    p = sub.add_parser("plot", help="draw a saved graph in 3D, with the correlogram of each edge")
-    p.add_argument("path", help="recording (.h5), its graph_<method> folder, or one of all/no_bursts/robust inside it")
+    p = sub.add_parser("plot", help="draw a saved graph in 3D with its top 4 correlograms; click an electrode for its own")
+    p.add_argument("path", help="results/<recording>, its graph_<method> folder, or one of all/no_bursts/robust inside it "
+                                  "(a recording's .h5 path also works, and the file need not exist)")
     p.add_argument("--method", default="cch_jitter", help="graph to show when PATH is a recording")
     p.add_argument("--spike-set", choices=["all", "no_bursts", "robust"], default="all",
                    help="all spikes, network bursts removed, or edges significant in both")
@@ -288,7 +292,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_benchmark)
 
     p = sub.add_parser("view", help="interactive viewer with the 4x4x4 electrode selector")
-    p.add_argument("path")
+    p.add_argument("path", help="recording (.h5), or results/<recording> or its detect folder (works without the .h5; "
+                                "voltage traces need it)")
     session_args(p)
     p.add_argument("--spikes", help="detection folder (default: newest under results/<recording>/)")
     p.add_argument("--electrode", default=None)

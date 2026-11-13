@@ -94,8 +94,8 @@ Every config is a frozen pydantic model next to the step that uses it, saved as 
 | `connectivity` | Estimator registry and `estimate`, `cch_hollow`, `cch_jitter`, `sttc`, `tspe` (signed: excitatory and inhibitory, via Elephant), `cfp`, `cch_gauss2` (Kumar et al. 2026 weight, no test), surrogates and fitted p-values (D17), FDR, graph files. `pipeline.py` connects it to detection results. |
 | `synth` | Hawkes network with known connections, optional inhibitory units (D22) and optional confounds (D16). |
 | `benchmark` | Scenarios, scoring (including indirect false positives), parallel runner. |
-| `viz` | Plotting functions: data and an optional `ax` in, artists out, no file I/O. `plot_connectivity` is the `meagraph plot` figure. |
-| `viewer` | Interactive viewer (D12), `meagraph view`. Nothing else imports it. |
+| `viz` | Plotting functions: data and an optional `ax` in, artists out, no file I/O. `plot_connectivity` is the `meagraph plot` figure (top 4 correlograms; clicking an electrode shows its label, rate and its own top 4). |
+| `viewer` | Interactive viewer (D12), `meagraph view`. Nothing else imports it. Takes a `.h5` or `results/<recording>`; without the `.h5` it shows everything but the voltage trace (see below). |
 | `cli` | `info`, `probes`, `audit`, `detect`, `graph`, `plot`, `benchmark`, `view`. Each command is a thin wrapper over library calls. |
 | `realtime`, `reservoir` | Empty placeholders for Phase 7. |
 
@@ -137,6 +137,8 @@ A spec can also live outside the package; pass its YAML path instead of a name.
 - `estimate(trains, config) -> ConnectivityResult`, with matrices as (source row, target column) and NaN for untested pairs.
 
 Decorate it with `@register` and import it in `connectivity/__init__.py`. It then works with `estimate(...)`, `meagraph graph --method` and the benchmark without further changes. An estimator that needs more than spike times (for example stimulus-evoked mapping) reads them from the `DetectionResult`, which carries the stimulation events.
+
+**Without the recordings.** `meagraph plot` and `meagraph view` can be pointed at `results/<recording>`, so the `.h5` can be moved off the laptop once `detect` and `graph` have run. `plot` never reads the `.h5`. `view` takes everything from `detect/` (spikes, waveforms, QC, pulses, positions; grid from `--probe`) and shows the voltage trace only if the recording is still on disk (the provenance path, or `<name>.h5` next to `results/`). Re-running `audit`, `detect` or `graph` with new settings still needs the `.h5`, so keep a copy elsewhere (e.g. the lab NAS).
 
 **A figure.** Add a function to `meagraph.viz` that takes data and an optional `ax` and returns artists. The viewer, notebooks and report figures can then share it.
 

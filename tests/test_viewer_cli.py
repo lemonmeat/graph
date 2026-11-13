@@ -60,6 +60,30 @@ def test_click_on_map_selects_nearest_electrode(recording_with_spikes):
     assert nearest_on_screen(v.ax_map, v.cube_xyz, -500, -500) is None
 
 
+def test_viewer_runs_from_results_without_the_recording(recording_with_spikes, tmp_path):
+    with_h5 = load_viewer_data(recording_with_spikes)
+    results = default_detection_folder(recording_with_spikes).parent
+    # the .h5 still exists: a results folder finds it, and traces are shown
+    assert load_viewer_data(results).has_traces
+    recording_with_spikes.unlink()
+    for path in (results, results / "detect", recording_with_spikes):
+        data = load_viewer_data(path)
+        assert not data.has_traces and data.recording_path is None
+        assert data.electrodes == with_h5.electrodes
+        np.testing.assert_array_equal(data.grid, with_h5.grid)
+        assert data.active == with_h5.active and data.spike_source == with_h5.spike_source
+        assert (data.t_start, data.t_stop) == pytest.approx((with_h5.t_start, with_h5.t_stop))
+        np.testing.assert_allclose(data.stim_onsets["STG 1"], [0.6, 1.1, 1.6])
+        assert data.spikes.keys() == with_h5.spikes.keys()
+    v = Viewer(data, electrode="12", win=0.5)
+    v._set(elec="33")
+    assert "no trace" in v.ax_trace.get_title(loc="left")
+    assert main(["view", str(results), "--save", str(tmp_path / "v.png")]) == 0
+    assert (tmp_path / "v.png").stat().st_size > 10_000
+    with pytest.raises(FileNotFoundError):
+        load_viewer_data(tmp_path / "nothing_here")
+
+
 def test_viewer_falls_back_to_no_spikes(make_mcs_file):
     path, _ = make_mcs_file()
     data = load_viewer_data(path)

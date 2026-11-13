@@ -168,7 +168,7 @@ def plot_graph_3d(positions_um: np.ndarray, node_ids: Sequence[str], edges: Sequ
     pos = np.asarray(positions_um, dtype=np.float64)
     if background_um is not None and len(background_um):
         bg = np.asarray(background_um, dtype=np.float64)
-        ax.scatter(bg[:, 0], bg[:, 1], bg[:, 2], s=10, color=GRID, depthshade=False)
+        ax.scatter(bg[:, 0], bg[:, 1], bg[:, 2], s=10, color=GRID, depthshade=False, gid="background")
     vals = np.zeros(len(pos)) if values is None else np.asarray(values, dtype=np.float64)
     sc = ax.scatter(pos[:, 0], pos[:, 1], pos[:, 2], c=vals, s=110, cmap="Blues", vmin=0,
                     vmax=max(float(np.max(vals, initial=0)), 1e-9), edgecolors=INK, linewidths=1.2, depthshade=False)  # fmt: skip
@@ -191,43 +191,147 @@ def plot_graph_3d(positions_um: np.ndarray, node_ids: Sequence[str], edges: Sequ
     return sc
 
 
+def _pair_rows(result, node: int | None, n: int) -> list[dict]:
+    """The ``n`` pairs to show: the strongest significant edges overall (``node`` None), or the
+    strongest edges touching ``node``, topped up with its closest tested non-significant pairs
+    (smallest p; ``significant`` False) when it has fewer than ``n`` edges."""
+    rows = [dict(e, significant=True) for e in result.edges()]
+    if node is None:
+        return rows[:n]
+    uid = result.node_ids[node]
+    rows = [r for r in rows if uid in (r["source"], r["target"])][:n]
+    if len(rows) < n:
+        tested = result.tested & ~result.significant & np.isfinite(result.weights)
+        cand = [(i, node) for i in range(len(result.node_ids)) if tested[i, node]]
+        cand += [(node, j) for j in range(len(result.node_ids)) if tested[node, j]]
+        if not result.directed:  # one entry per unordered pair
+            cand = list({tuple(sorted(c)): c for c in cand}.values())
+        # smallest p first (methods without p-values: largest |weight| first)
+        cand.sort(key=lambda ij: (np.nan_to_num(result.p_values[ij], nan=np.inf), -abs(result.weights[ij])))
+        for i, j in cand[: n - len(rows)]:
+            rows.append(dict(source=result.node_ids[i], target=result.node_ids[j], weight=float(result.weights[i, j]),
+                             delay_ms=float(result.delays_ms[i, j]), p_value=float(result.p_values[i, j]),
+                             significant=False))  # fmt: skip
+    return rows
+
+
+def _node_info(result, node: int) -> str:
+    uid = result.node_ids[node]
+    edges = result.edges()
+    out = sum(e["source"] == uid for e in edges)
+    inn = sum(e["target"] == uid for e in edges)
+    lines = [f"electrode {uid}",
+             f"{int(result.n_spikes[node])} spikes, {result.n_spikes[node] / result.duration_s:.2f} Hz"]  # fmt: skip
+    if result.positions_um is not None:
+        x, y, z = result.positions_um[node]
+        lines.append(f"position ({x:.0f}, {y:.0f}, {z:.0f}) µm")
+    lines.append(f"edges: {out} out, {inn} in" if result.directed else f"edges: {out + inn}")
+    lines.append("click it again (or Esc) to show the whole graph")
+    return "\n".join(lines)
+
+
 def plot_connectivity(result, ccg: np.ndarray | None = None, lag_edges_ms: np.ndarray | None = None, *,
-                      background_um: np.ndarray | None = None, max_ccgs: int = 6, title: str = "", fig=None):  # fmt: skip
+                      background_um: np.ndarray | None = None, background_ids: Sequence[str] | None = None,
+                      max_ccgs: int = 4, title: str = "", fig=None):  # fmt: skip
     """Overview figure of one :class:`~meagraph.connectivity.ConnectivityResult`: the graph in 3D,
-    and the correlogram of each significant edge (strongest first, at most ``max_ccgs``).
+    and up to ``max_ccgs`` (4) correlograms in a 2 x 2 grid, strongest significant edges first.
     ``ccg`` is ``(n, n, bins)`` source→target, as from ``meagraph.connectivity.cross_correlograms``.
+
+    Interactive (in a window): clicking an electrode shows its label, rate and edge counts, and
+    swaps the correlograms for the strongest edges of that electrode; if it has fewer than
+    ``max_ccgs`` edges, its tested non-significant pairs with the smallest p fill the rest, marked "n.s.".
+    Clicking a background electrode (``background_ids``, aligned with ``background_um``) says
+    it is not in the graph. Clicking the selected electrode again, or Esc, restores the overview.
     """
     import matplotlib.pyplot as plt
 
     edges = result.edges()
     index = {u: k for k, u in enumerate(result.node_ids)}
     pairs = [(index[e["source"]], index[e["target"]]) for e in edges]
-    shown = edges[:max_ccgs] if ccg is not None else []
-    n_cols = 1 + min(len(shown), 3)
-    n_rows = 2 if len(shown) > 3 else 1
-    fig = fig or plt.figure(figsize=(4.6 + 3.4 * (n_cols - 1), 4.2 * n_rows))
-    grid = fig.add_gridspec(n_rows, n_cols, width_ratios=[1.4] + [1] * (n_cols - 1))
+    n_cols = 3 if ccg is not None else 1
+    fig = fig or plt.figure(figsize=(5.2 + 3.4 * (n_cols - 1), 8.0 if ccg is not None else 5.0))
+    grid = fig.add_gridspec(2, n_cols, width_ratios=[1.5] + [1] * (n_cols - 1), height_ratios=[1, 1])
     ax = fig.add_subplot(grid[:, 0], projection="3d")
+    sc = None
     if result.positions_um is None:
         ax.text2D(0.5, 0.5, "no electrode positions saved", ha="center", transform=ax.transAxes)
     else:
-        plot_graph_3d(result.positions_um, result.node_ids, pairs, directed=result.directed,
-                      values=result.n_spikes / result.duration_s, background_um=background_um,
-                      inhibitory=[result.signed and e["weight"] < 0 for e in edges], ax=ax)  # fmt: skip
-    more = f" (correlograms: strongest {len(shown)})" if len(edges) > len(shown) > 0 else ""
+        sc = plot_graph_3d(result.positions_um, result.node_ids, pairs, directed=result.directed,
+                           values=result.n_spikes / result.duration_s, background_um=background_um,
+                           inhibitory=[result.signed and e["weight"] < 0 for e in edges], ax=ax)  # fmt: skip
     kinds = "; orange = excitatory, blue = inhibitory" if result.signed else ""
-    ax.set_title(f"{title}\n{result.method}: {len(edges)} edge(s){more}; node colour = rate{kinds}", fontsize=9)
+    ax.set_title(f"{title}\n{result.method}: {len(edges)} edge(s); node colour = rate{kinds}\n"
+                 "click an electrode for its correlograms", fontsize=9)  # fmt: skip
+    info = fig.text(0.01, 0.01, "", fontsize=8, family="monospace", va="bottom", color=INK)
+    panels = [fig.add_subplot(grid[k // 2, 1 + k % 2]) for k in range(max_ccgs if ccg is not None else 0)]
     window = result.params.get("window_ms")
-    for k, e in enumerate(shown):
-        a = fig.add_subplot(grid[k // 3, 1 + k % 3])
-        i, j = index[e["source"]], index[e["target"]]
-        plot_ccg(ccg[i, j], lag_edges_ms, window_ms=tuple(window) if window else None, ax=a)
-        arrow = "→" if result.directed else "–"
-        delay = f", delay {e['delay_ms']:.2f} ms" if np.isfinite(e["delay_ms"]) else ""
-        kind = (" inhibitory" if e["weight"] < 0 else " excitatory") if result.signed else ""
-        pval = f", p {e['p_value']:.1g}" if np.isfinite(e["p_value"]) else f", weight {e['weight']:.3g}"
-        a.set_title(f"{e['source']} {arrow} {e['target']}{kind}{delay}{pval}", fontsize=9)
-    fig.tight_layout()
+    arrow = "→" if result.directed else "–"
+    state = {"node": None, "ring": None}
+
+    def draw(node: int | None) -> None:
+        state["node"] = node
+        rows = _pair_rows(result, node, len(panels))
+        for a in panels:
+            a.clear()
+            a.set_visible(False)
+        for a, e in zip(panels, rows):
+            a.set_visible(True)
+            i, j = index[e["source"]], index[e["target"]]
+            plot_ccg(ccg[i, j], lag_edges_ms, window_ms=tuple(window) if window else None, ax=a)
+            delay = f", {e['delay_ms']:.2f} ms" if np.isfinite(e["delay_ms"]) else ""
+            kind = (" inh" if e["weight"] < 0 else " exc") if result.signed and e["significant"] else ""
+            stat = f"p {e['p_value']:.1g}" if np.isfinite(e["p_value"]) else f"w {e['weight']:.3g}"
+            ns = "" if e["significant"] else " (n.s.)"
+            a.set_title(f"{e['source']} {arrow} {e['target']}{kind}{ns}\n{stat}{delay}", fontsize=9,
+                        color=INK if e["significant"] else MUTED)  # fmt: skip
+        if panels and not rows:
+            panels[0].set_visible(True)
+            panels[0].set_axis_off()
+            panels[0].text(0.5, 0.5, "no tested pairs" if node is not None else "no significant edges",
+                           ha="center", va="center", color=MUTED, transform=panels[0].transAxes)  # fmt: skip
+        if state["ring"] is not None:
+            state["ring"].remove()
+            state["ring"] = None
+        if node is None:
+            info.set_text(f"top {len(rows)} of {len(edges)} edge(s), strongest first" if rows else "")
+        else:
+            info.set_text(_node_info(result, node))
+            if result.positions_um is not None:
+                p = result.positions_um[node]
+                state["ring"] = ax.scatter([p[0]], [p[1]], [p[2]], s=320, facecolors="none", edgecolors=WARM,
+                                           linewidths=2.5, depthshade=False)  # fmt: skip
+        fig.canvas.draw_idle()
+
+    def on_pick(event) -> None:
+        idx = getattr(event, "ind", None)
+        if idx is None or not len(idx):
+            return
+        if event.artist is sc:
+            node = int(idx[0])
+            draw(None if node == state["node"] else node)
+        elif event.artist.get_gid() == "background" and background_ids is not None:
+            uid = str(background_ids[int(idx[0])])
+            if uid in index:  # drawn under a graph node
+                draw(None if index[uid] == state["node"] else index[uid])
+            else:
+                draw(None)
+                info.set_text(f"electrode {uid}: not in this graph (not QC-active or too few spikes)")
+                fig.canvas.draw_idle()
+
+    def on_key(event) -> None:
+        if event.key == "escape":
+            draw(None)
+
+    if sc is not None:
+        sc.set_picker(6)
+        for coll in ax.collections:
+            if coll.get_gid() == "background":
+                coll.set_picker(4)
+    fig.canvas.mpl_connect("pick_event", on_pick)
+    fig.canvas.mpl_connect("key_press_event", on_key)
+    fig._meagraph_select = draw  # keeps the callbacks reachable; lets scripts and tests select a node
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.9, bottom=0.14, wspace=0.3, hspace=0.55)
+    draw(None)
     return fig
 
 

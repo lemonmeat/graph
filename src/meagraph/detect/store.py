@@ -35,6 +35,31 @@ def default_detection_folder(recording_path: str | Path) -> Path:
     return p.parent / "results" / p.stem / "detect"
 
 
+def detection_folder_for(path: str | Path) -> Path | None:
+    """The detection folder for ``path``: a recording (which need not exist any more), its
+    ``results/<recording>`` folder, or a detection folder itself. None if there is none."""
+    p = Path(path)
+    if p.suffix == ".h5":
+        return find_detection(p)
+    for folder in (p, p / "detect"):
+        if (folder / "spikes.npz").exists():
+            return folder
+    return None
+
+
+def source_recording(folder: str | Path) -> Path | None:
+    """The recording a detection folder was made from, if it is still on disk: the path in its
+    provenance, else ``<name>.h5`` next to the ``results`` folder."""
+    folder = Path(folder)
+    candidates = []
+    prov = folder / "provenance.json"
+    if prov.exists():
+        candidates += [Path(i["path"]) for i in json.loads(prov.read_text()).get("inputs", [])]
+    if folder.parent.parent.name == "results":
+        candidates.append(folder.parent.parent.parent / f"{folder.parent.name}.h5")
+    return next((c for c in candidates if c.suffix == ".h5" and c.is_file()), None)
+
+
 def find_detection(recording_path: str | Path) -> Path | None:
     """The recording's detection folder at the default location, if it exists."""
     folder = default_detection_folder(recording_path)

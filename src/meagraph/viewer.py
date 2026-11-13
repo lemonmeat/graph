@@ -1,8 +1,11 @@
 """Interactive viewer: 4x4x4 electrode selector, spike raster, trace and waveforms.
 
 Rebuilt from the legacy ``visualize.py`` on the meagraph API; the behaviours it preserves are
-listed in docs/EXISTING_CODE.md. Launch with ``meagraph view <file.h5>``. Nothing in the core
-library imports this module (it needs matplotlib, the ``viewer`` extra).
+listed in docs/EXISTING_CODE.md. Launch with ``meagraph view <file.h5>``, or with
+``meagraph view results/<recording>`` when the recording has been deleted to save space: spikes,
+waveforms, QC and stimulation pulses all come from the detection folder; only the voltage trace
+needs the ``.h5`` (it is used when still on disk). Nothing in the core library imports this
+module (it needs matplotlib, the ``viewer`` extra).
 """
 
 from __future__ import annotations
@@ -14,38 +17,34 @@ from pathlib import Path
 import numpy as np
 
 from meagraph import viz
-from meagraph.detect.store import find_detection, load_detection
-from meagraph.io import McsH5Recording, Session, load_session
-from meagraph.probe import DEFAULT_PROBE
+from meagraph.detect.store import detection_folder_for, load_detection, source_recording
+from meagraph.io import McsH5Recording, load_session
+from meagraph.probe import DEFAULT_PROBE, load_probe_spec
 
 
 @dataclass
 class ViewerData:
     """Everything the viewer shows, loaded through the package API."""
 
-    session: Session
+    name: str  # recording name, for titles
     electrodes: tuple[str, ...]  # recording channel order
     grid: np.ndarray  # (n, 3) row, col, layer
     spikes: dict[str, np.ndarray]  # s, recording clock
     waveforms: dict[str, np.ndarray]  # (n_spikes, samples)
     cutout_ms: tuple[float, float]
     spike_source: str
+    t_start: float
+    t_stop: float
+    stim_onsets: dict[str, np.ndarray] = field(default_factory=dict)
     active: frozenset[str] = frozenset()
-    streams: tuple[str, ...] = ()  # analog stream labels in processing order
+    streams: tuple[str, ...] = ()  # analog stream labels in processing order; empty without the .h5
+    analog_stream: str | None = None  # the stream analysis read
+    recording_path: Path | None = None  # None: the .h5 is gone, no traces
     _stream_cache: dict[str, McsH5Recording] = field(default_factory=dict)
 
     @property
-    def t_start(self) -> float:
-        return self.session.recording.get_start_time()
-
-    @property
-    def t_stop(self) -> float:
-        rec = self.session.recording
-        return rec.get_start_time() + rec.get_total_duration()
-
-    @property
-    def stim_onsets(self) -> dict[str, np.ndarray]:
-        return {s.source: s.onsets_s for s in self.session.stim}
+    def has_traces(self) -> bool:
+        return self.recording_path is not None and bool(self.streams)
 
     def rates_hz(self) -> np.ndarray:
         duration = self.t_stop - self.t_start
@@ -53,17 +52,38 @@ class ViewerData:
 
     def stream(self, label: str) -> McsH5Recording:
         if label not in self._stream_cache:
-            self._stream_cache[label] = McsH5Recording(self.session.path, stream=label)
+            self._stream_cache[label] = McsH5Recording(self.recording_path, stream=label)
         return self._stream_cache[label]
 
 
+def _grid(electrodes, positions_um, probe) -> np.ndarray:
+    """(row, col, layer) per electrode from the probe spec; if the probe does not know the labels,
+    ranks of the saved positions (x = col, y = row, z = layer)."""
+    spec = load_probe_spec(probe)
+    index = {c: k for k, c in enumerate(spec.labels)}
+    if all(e in index for e in electrodes):
+        return spec.grid_indices()[[index[e] for e in electrodes]]
+    pos = np.asarray(positions_um, dtype=np.float64)
+    ranks = [np.unique(np.round(pos[:, a], 3), return_inverse=True)[1] + 1 for a in range(3)]
+    return np.column_stack([ranks[1], ranks[0], ranks[2]])
+
+
 def load_viewer_data(path, probe=DEFAULT_PROBE, stim_site=None, spikes_dir=None, stimlog="auto") -> ViewerData:
-    """Spikes come from ``spikes_dir``, else the recording's ``meagraph detect`` result."""
-    session = load_session(path, probe=probe, stim_site=stim_site, stimlog=stimlog)
+    """``path`` is a recording (.h5), or ``results/<recording>`` or its detection folder. Spikes
+    come from ``spikes_dir``, else the recording's ``meagraph detect`` result. Without the .h5
+    (deleted, or a results folder whose recording is gone) everything but the trace is shown;
+    ``stim_site`` and ``stimlog`` then do nothing (the saved pulses keep their sites)."""
+    p = Path(path)
+    folder = Path(spikes_dir) if spikes_dir else detection_folder_for(p)
+    recording = p if p.suffix == ".h5" and p.is_file() else (source_recording(folder) if folder else None)
+    if recording is None:
+        if folder is None:
+            raise FileNotFoundError(f"{p} is neither a recording nor a results folder with a detection (run: meagraph detect)")
+        return _viewer_data_from_results(folder, probe)
+    session = load_session(recording, probe=probe, stim_site=stim_site, stimlog=stimlog)
     rec = session.recording
     electrodes = tuple(str(c) for c in rec.channel_ids)
     grid = np.column_stack([rec.get_property(k) for k in ("grid_row", "grid_col", "grid_layer")])
-    folder = Path(spikes_dir) if spikes_dir else find_detection(path)
     spikes, waveforms, cutout, source, active = {}, {}, (1.0, 2.0), "no spikes (run: meagraph detect)", frozenset()
     if folder is not None:
         det = load_detection(folder)
@@ -71,7 +91,22 @@ def load_viewer_data(path, probe=DEFAULT_PROBE, stim_site=None, spikes_dir=None,
         source = f"meagraph detect ({det.config.threshold_sigma:g} sigma)"
         active = frozenset(det.active_channels)
     streams = tuple(s.short_label for s in session.inventory.analog_streams)
-    return ViewerData(session, electrodes, grid, spikes, waveforms, cutout, source, active, streams)
+    t0 = rec.get_start_time()
+    return ViewerData(session.path.name, electrodes, grid, spikes, waveforms, cutout, source, t0, t0 + rec.get_total_duration(),
+                      {s.source: s.onsets_s for s in session.stim}, active, streams, session.analog_stream, session.path)  # fmt: skip
+
+
+def _viewer_data_from_results(folder: Path, probe) -> ViewerData:
+    det = load_detection(folder)
+    tr = det.trains
+    electrodes = tuple(det.qc.channel_ids)
+    by_unit = dict(zip(tr.unit_ids, tr.positions_um)) if tr.positions_um is not None else {}
+    positions = [by_unit.get(e, (np.nan,) * 3) for e in electrodes]
+    name = folder.parent.name if folder.name == "detect" else folder.name
+    return ViewerData(name, electrodes, _grid(electrodes, positions, probe), tr.as_dict(), det.waveforms_uv,
+                      det.config.cutout_ms, f"meagraph detect ({det.config.threshold_sigma:g} sigma)", tr.t_start_s,
+                      tr.t_stop_s, {s.source: s.onsets_s for s in det.stim}, frozenset(det.active_channels),
+                      analog_stream=det.analog_stream)  # fmt: skip
 
 
 def nearest_on_screen(ax3d, xyz: np.ndarray, x_px: float, y_px: float, max_px: float = 25.0) -> int | None:
@@ -93,7 +128,10 @@ class Viewer:
         self.plt, self.data = plt, data
         self.elec = electrode if electrode in data.electrodes else data.electrodes[0]
         # "auto": the stream analysis reads; "raw": the first stream of the processing chain.
-        self.stream = {"auto": data.session.analog_stream, "raw": data.streams[0]}.get(stream, stream)
+        if data.has_traces:
+            self.stream = {"auto": data.analog_stream or data.streams[-1], "raw": data.streams[0]}.get(stream, stream)
+        else:
+            self.stream = None
         self.bandpass = bandpass
         self.win = win
         latest = max(data.t_stop - win, data.t_start)
@@ -103,14 +141,14 @@ class Viewer:
                              "xtick.color": viz.MUTED, "ytick.color": viz.MUTED, "text.color": viz.INK})  # fmt: skip
         fig = self.fig = plt.figure(figsize=(15, 9.2))
         if fig.canvas.manager is not None:
-            fig.canvas.manager.set_window_title(data.session.path.name)
+            fig.canvas.manager.set_window_title(data.name)
         gs = fig.add_gridspec(3, 3, left=0.05, right=0.985, top=0.93, bottom=0.15, width_ratios=[1.0, 1.35, 1.0],
                               height_ratios=[1.25, 1.0, 0.0001], hspace=0.35, wspace=0.22)  # fmt: skip
         self.ax_map = fig.add_subplot(gs[0, 0], projection="3d")
         self.ax_raster = fig.add_subplot(gs[0, 1:])
         self.ax_trace = fig.add_subplot(gs[1, :2])
         self.ax_wave = fig.add_subplot(gs[1, 2])
-        fig.suptitle(data.session.path.name, x=0.05, ha="left", fontsize=10, color=viz.MUTED)
+        fig.suptitle(data.name, x=0.05, ha="left", fontsize=10, color=viz.MUTED)
         self._draw_map()
         self._draw_raster()
 
@@ -119,12 +157,16 @@ class Viewer:
         self.s_w = Slider(fig.add_axes([0.08, 0.055, 0.50, 0.025]), "window (s)", 0.05, 20, valinit=win, valstep=0.05, color=viz.ACCENT)
         self.s_t.on_changed(self._on_slider)
         self.s_w.on_changed(self._on_slider)
-        self.radio = RadioButtons(fig.add_axes([0.63, 0.02, 0.22, 0.11], frameon=False), list(data.streams),
-                                  active=data.streams.index(self.stream), activecolor=viz.ACCENT)  # fmt: skip
-        self.radio.on_clicked(lambda label: self._set(stream=label))
-        self.check = CheckButtons(fig.add_axes([0.87, 0.06, 0.12, 0.06], frameon=False), ["band-pass\n300-3000 Hz"], [bandpass])
-        self.check.on_clicked(lambda _: self._set(bandpass=not self.bandpass))
-        fig.text(0.63, 0.135, "analog stream", color=viz.MUTED, fontsize=8)
+        if data.has_traces:
+            self.radio = RadioButtons(fig.add_axes([0.63, 0.02, 0.22, 0.11], frameon=False), list(data.streams),
+                                      active=data.streams.index(self.stream), activecolor=viz.ACCENT)  # fmt: skip
+            self.radio.on_clicked(lambda label: self._set(stream=label))
+            self.check = CheckButtons(fig.add_axes([0.87, 0.06, 0.12, 0.06], frameon=False), ["band-pass\n300-3000 Hz"], [bandpass])
+            self.check.on_clicked(lambda _: self._set(bandpass=not self.bandpass))
+            fig.text(0.63, 0.135, "analog stream", color=viz.MUTED, fontsize=8)
+        else:
+            fig.text(0.63, 0.07, "results only: the recording (.h5) is not on disk,\nso no voltage trace",
+                     color=viz.MUTED, fontsize=8)  # fmt: skip
 
         fig.canvas.mpl_connect("button_release_event", self._on_release)
         fig.canvas.mpl_connect("button_press_event", self._on_click)
@@ -157,6 +199,8 @@ class Viewer:
 
     # -- dynamic panels ------------------------------------------------------------------ #
     def _read_trace(self):
+        if not self.data.has_traces:
+            return np.zeros(0), np.zeros(0)
         rec = self.data.stream(self.stream)
         fs = rec.get_sampling_frequency()
         start = max(int(round((self.t0 - rec.get_start_time()) * fs)), 0)
@@ -177,10 +221,23 @@ class Viewer:
         t, y = self._read_trace()
         sp = d.spikes.get(self.elec, np.zeros(0))
         self.ax_trace.clear()
-        viz.plot_trace(t, y, spikes_s=sp, stim_onsets=d.stim_onsets, ax=self.ax_trace)
         n_win = int(((sp >= self.t0) & (sp <= self.t0 + self.win)).sum())
-        self.ax_trace.set_title(f"Electrode {self.elec} - {self.stream}{' (band-passed)' if self.bandpass else ''}"
-                                f" - {n_win} spikes in window", loc="left", fontsize=9)  # fmt: skip
+        if d.has_traces:
+            viz.plot_trace(t, y, spikes_s=sp, stim_onsets=d.stim_onsets, ax=self.ax_trace)
+            what = f"{self.stream}{' (band-passed)' if self.bandpass else ''}"
+        else:  # spike times and pulses in the window, without the voltage
+            t1 = self.t0 + self.win
+            in_win = sp[(sp >= self.t0) & (sp <= t1)]
+            self.ax_trace.vlines(in_win, 0, 1, color=viz.ACCENT, linewidth=1.0)
+            for k, (source, onsets) in enumerate(d.stim_onsets.items()):
+                for s in onsets[(onsets >= self.t0) & (onsets <= t1)]:
+                    self.ax_trace.axvline(s, color=viz.STIM_COLORS[k % len(viz.STIM_COLORS)], linewidth=1.0, alpha=0.7)
+            self.ax_trace.set_xlim(self.t0, t1)
+            self.ax_trace.set_ylim(0, 1.2)
+            self.ax_trace.set_yticks([])
+            self.ax_trace.set_xlabel("time (s)")
+            what = "spike times (no trace: recording not on disk)"
+        self.ax_trace.set_title(f"Electrode {self.elec} - {what} - {n_win} spikes in window", loc="left", fontsize=9)
 
         self.ax_wave.clear()
         w = d.waveforms.get(self.elec, np.zeros((0, 0)))

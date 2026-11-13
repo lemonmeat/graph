@@ -255,3 +255,6 @@ def test_saved_graph_reloads_with_its_tested_spikes_and_plots(tmp_path):
     out = tmp_path / "graph.png"
     assert main(["plot", str(graph), "--spike-set", "no_bursts", "--save", str(out)]) == 0
     assert out.stat().st_size > 10_000
+    # pointed at results/<recording>, or at a recording .h5 that no longer exists
+    assert main(["plot", str(tmp_path / "results" / "rec"), "--method", "cch_hollow", "--save", str(out)]) == 0
+    assert main(["plot", str(tmp_path / "rec.h5"), "--method", "cch_hollow", "--save", str(out)]) == 0
