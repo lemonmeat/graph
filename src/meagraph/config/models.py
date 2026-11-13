@@ -15,7 +15,8 @@ class SessionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     path: Path
-    stream: str = "raw"
+    # "auto": the raw stream, or the end of the MCS filter chain when raw was not recorded (D27).
+    stream: str = "auto"
     probe: str = DEFAULT_PROBE
     recording_index: NonNegativeInt = 0
     # The stimulated electrode is not recorded in MCS files. Either one electrode id for every

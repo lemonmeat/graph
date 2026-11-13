@@ -16,6 +16,7 @@ import numpy as np
 
 NULL_GUID = "00000000-0000-0000-0000-000000000000"
 RAW = "raw"
+AUTO = "auto"
 
 
 def decode(value) -> str:
@@ -148,7 +149,8 @@ def lineage_order(streams: Sequence[StreamInfo]) -> list[StreamInfo]:
         else:
             roots.append(s)
     ordered: list[StreamInfo] = []
-    queue = sorted(roots, key=lambda s: s.name)
+    # A filter stream whose source was not recorded is a root too; the hardware stream goes first.
+    queue = sorted(roots, key=lambda s: (s.source_guid != NULL_GUID, s.name))
     while queue:
         s = queue.pop(0)
         ordered.append(s)
@@ -182,14 +184,36 @@ def match_stream(streams: Sequence[StreamInfo], query: str, kind: str = "stream"
     raise KeyError(f"no {kind} matching {query!r}; available: {[s.short_label for s in streams]}")
 
 
-def resolve_analog_stream(rec: h5py.Group, stream: str = RAW) -> AnalogStreamInfo:
-    """``'raw'`` selects the hardware stream (no source stream); anything else is matched by label."""
+def analysis_stream(streams: Sequence[AnalogStreamInfo]) -> AnalogStreamInfo:
+    """The stream analysis reads by default (DECISIONS.md D2, D27): the raw stream when it was
+    recorded, otherwise the end of the recorded filter chain (e.g. only 'Filter (3)' saved)."""
+    raws = [s for s in streams if s.is_raw]
+    if len(raws) > 1:
+        raise ValueError(f"expected one raw analog stream, found {[s.short_label for s in raws]}")
+    if raws:
+        return raws[0]
+    sources = {s.source_guid for s in streams}
+    ends = [s for s in streams if s.guid not in sources]
+    if len(ends) != 1:
+        raise ValueError(
+            f"no raw analog stream, and the filter streams {[s.short_label for s in ends]} are not one chain; "
+            "record the raw stream or a single filter output"
+        )
+    return ends[0]
+
+
+def resolve_analog_stream(rec: h5py.Group, stream: str = AUTO) -> AnalogStreamInfo:
+    """``'auto'`` selects :func:`analysis_stream`, ``'raw'`` the hardware stream (no source
+    stream); anything else is matched by label."""
     streams = list_analog_streams(rec)
     if not isinstance(stream, str):
-        raise TypeError("select analog streams by label or 'raw', not by index (stream order != processing order)")
+        raise TypeError("select analog streams by label, 'auto' or 'raw', not by index (stream order != processing order)")
+    if _norm(stream) == AUTO:
+        return analysis_stream(streams)
     if _norm(stream) == RAW:
         raws = [s for s in streams if s.is_raw]
         if len(raws) != 1:
-            raise ValueError(f"expected exactly one raw analog stream, found {[s.short_label for s in raws]}")
+            raise ValueError(f"expected exactly one raw analog stream, found {[s.short_label for s in raws]}; "
+                             f"recorded: {[s.short_label for s in streams]}")  # fmt: skip
         return raws[0]
     return match_stream(streams, stream, kind="analog stream")

@@ -129,7 +129,7 @@ Old scripts stay runnable until the Phase 2 regression passes and you approve re
 - **Q2.** Where does the `MEA_CUBE` map come from (pad drawing, mask)? The data cannot confirm it. Are the 5 empty cells absent or present-but-unwired?
 - **Q3.** Is label `15` the reference electrode? It shows 0.73 µV noise, no spikes and almost no artifact. Should it be excluded everywhere?
 - **Q4.** For the planar 60-channel recordings: which MCS MEA type (pitch 100 or 200 µm, 8×8 naming)? Are sample files available?
-- **Q5.** What are the Filter 1/2/3 settings and the MCS Spike Detector settings in Multi Channel Experimenter? This is for documentation only (D2).
+- **Q5.** What are the MCS Spike Detector settings in Multi Channel Experimenter? This is for documentation only (D2). *The filter part was answered 2026-11-03:* Filter 1 is a 2nd-order Butterworth HP at 200 Hz, Filter 2 a 2nd-order Butterworth LP at 3500 Hz, and Filter 3 a 60 Hz notch. All three were verified against the data (`DATA_FORMAT.md` § Analog streams).
 - **Q6.** Stimulation protocol. Is `500amplitude` in mV (voltage mode) or µA? Is the pulse negative-first? Is it 3 biphasic pulses with 500 µs per phase, as measured? Was the 11-15 file stimulated on electrode 12, as the artifact suggests?
 - **Q7.** Data:
   - Is there an "afterstim" baseline for exp3, for the pre/post comparison?

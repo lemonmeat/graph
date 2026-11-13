@@ -21,12 +21,19 @@ def _by_tag(files, tag):
     return hits[0]
 
 
+def _raw_group(f: h5py.File) -> h5py.Group:
+    """The hardware stream, found from its attributes alone (it has no source stream)."""
+    groups = f["Data/Recording_0/AnalogStream"].values()
+    (raw,) = [g for g in groups if g.attrs["SourceStreamGUID"].decode() == "00000000-0000-0000-0000-000000000000"]
+    return raw
+
+
 def test_reader_matches_independent_h5py_computation(real_files):
     for path in real_files:
         rec = McsH5Recording(path)
         i0, i1 = 50_000, 60_000
         with h5py.File(path, "r") as f:
-            g = f["Data/Recording_0/AnalogStream/Stream_0"]
+            g = _raw_group(f)
             info = g["InfoChannel"][:]
             rows = g["ChannelData"][:, i0:i1].astype(np.float64)
         gain = info["ConversionFactor"] * 10.0 ** info["Exponent"] * 1e6
@@ -34,18 +41,39 @@ def test_reader_matches_independent_h5py_computation(real_files):
         np.testing.assert_allclose(rec.get_traces(start_frame=i0, end_frame=i1, return_in_uV=True), expected, rtol=1e-6, atol=1e-4)
 
 
+# Documented per recording (docs/DATA_FORMAT.md): sampling rate, first analog sample (s), analog
+# streams in processing order with their HDF5 names. Other files get the generic checks only.
+_JULY = (10_000.0, 0.0, [("Data Acquisition (1)", "Stream_0"), ("Filter (1)", "Stream_3"), ("Filter (2)", "Stream_2"), ("Filter (3)", "Stream_1")])
+_NOV = [("Data Acquisition (1)", "Stream_1"), ("Filter (3)", "Stream_0")]  # Filter (3)'s source stream was not saved
+KNOWN_LAYOUT = {
+    "2026-07-27T10-52-01": (10_000.0, 0.5, _JULY[2]),
+    "2026-07-29T15-16-32": _JULY,
+    "2026-07-29T15-32-23": _JULY,
+    "2026-11-03T22-27-18": (20_000.0, 0.6, _NOV),
+    "2026-11-03T22-52-01": (20_000.0, 0.0, _NOV),
+}
+
+
 def test_time_base_and_sampling_rate(real_files):
     for path in real_files:
         rec = McsH5Recording(path)
-        assert rec.get_sampling_frequency() == 10_000.0
-        assert rec.get_start_time() == pytest.approx(0.5 if "beforestim" in path.name else 0.0)
+        with h5py.File(path, "r") as f:
+            g = _raw_group(f)
+            assert rec.get_sampling_frequency() == 1e6 / g["InfoChannel"]["Tick"][0], path.name
+            assert rec.get_start_time() == pytest.approx(g["ChannelDataTimeStamps"][0, 0] * 1e-6), path.name
+        if path.name[:19] in KNOWN_LAYOUT:
+            fs, t0, _ = KNOWN_LAYOUT[path.name[:19]]
+            assert (rec.get_sampling_frequency(), rec.get_start_time()) == (fs, pytest.approx(t0)), path.name
 
 
 def test_stream_lineage(real_files):
     for path in real_files:
-        inv = inspect_file(path)
-        assert [s.short_label for s in inv.analog_streams] == ["Data Acquisition (1)", "Filter (1)", "Filter (2)", "Filter (3)"]
-        assert [s.name for s in inv.analog_streams] == ["Stream_0", "Stream_3", "Stream_2", "Stream_1"]
+        streams = inspect_file(path).analog_streams
+        assert streams[0].is_raw, path.name
+        position = {s.guid: k for k, s in enumerate(streams)}
+        assert all(position.get(s.source_guid, -1) < k for k, s in enumerate(streams)), path.name
+        if path.name[:19] in KNOWN_LAYOUT:
+            assert [(s.short_label, s.name) for s in streams] == KNOWN_LAYOUT[path.name[:19]][2], path.name
 
 
 # Known stimulation per recording (docs/DATA_FORMAT.md): {source: (pulses, pulse duration s)}.

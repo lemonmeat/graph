@@ -86,13 +86,14 @@ def nearest_on_screen(ax3d, xyz: np.ndarray, x_px: float, y_px: float, max_px: f
 
 
 class Viewer:
-    def __init__(self, data: ViewerData, t0=None, win=2.0, electrode=None, stream="raw", bandpass=False):
+    def __init__(self, data: ViewerData, t0=None, win=2.0, electrode=None, stream="auto", bandpass=False):
         import matplotlib.pyplot as plt
         from matplotlib.widgets import CheckButtons, RadioButtons, Slider
 
         self.plt, self.data = plt, data
         self.elec = electrode if electrode in data.electrodes else data.electrodes[0]
-        self.stream = data.streams[0] if stream == "raw" else stream
+        # "auto": the stream analysis reads; "raw": the first stream of the processing chain.
+        self.stream = {"auto": data.session.analog_stream, "raw": data.streams[0]}.get(stream, stream)
         self.bandpass = bandpass
         self.win = win
         latest = max(data.t_stop - win, data.t_start)

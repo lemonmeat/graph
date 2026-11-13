@@ -4,7 +4,7 @@ import pytest
 import spikeinterface as si
 
 from meagraph.io import McsH5Recording
-from meagraph.io._mcs_layout import first_timestamp_s
+from meagraph.io._mcs_layout import NULL_GUID, AnalogStreamInfo, analysis_stream, first_timestamp_s, lineage_order
 
 
 def test_values_follow_row_index_adzero_and_gains(mcs_file):
@@ -37,6 +37,28 @@ def test_raw_is_found_by_lineage_not_index(mcs_file):
     for label in ("Filter (1)", "filter", "Filter (1);Filter; Filter Data1"):
         filt = McsH5Recording(path, stream=label).get_traces(return_in_uV=True)
         np.testing.assert_allclose(filt, truth["filtered_uv"], rtol=1e-6)
+
+
+def test_auto_reads_the_filter_stream_when_raw_was_not_recorded(make_mcs_file):
+    path, truth = make_mcs_file(with_raw=False)
+    np.testing.assert_allclose(McsH5Recording(path).get_traces(return_in_uV=True), truth["filtered_uv"], rtol=1e-6)
+    with pytest.raises(ValueError, match=r"recorded: \['Filter \(1\)'\]"):
+        McsH5Recording(path, stream="raw")
+
+
+def test_analysis_stream_is_raw_else_the_end_of_the_filter_chain():
+    def stream(k, label, guid, source):
+        return AnalogStreamInfo(f"Stream_{k}", label, guid, source, "Electrode")
+
+    raw = stream(3, "Data Acquisition (1)", "r", NULL_GUID)
+    f1, f2, f3 = stream(2, "Filter (1)", "a", "r"), stream(1, "Filter (2)", "b", "a"), stream(0, "Filter (3)", "c", "b")
+    assert analysis_stream([f3, f1, raw]) is raw
+    assert analysis_stream([f3]) is f3
+    assert analysis_stream([f3, f2]) is f3  # Filter (1) not saved: still one chain
+    with pytest.raises(ValueError, match="not one chain"):
+        analysis_stream([f1, f3])  # Filter (2) not saved: two separate outputs
+    # A filter stream whose source was not saved is a root, but raw still comes first.
+    assert lineage_order([f3, raw]) == [raw, f3]
 
 
 def test_stream_index_is_rejected(mcs_file):

@@ -82,6 +82,7 @@ class DetectionResult:
     recovery_ms: dict[str, dict[str, float]]  # STG source -> channel -> ms (adaptive blanking only)
     config: DetectionConfig
     stim: tuple[StimEvents, ...] = ()  # the events that were blanked, with their sites
+    analog_stream: str | None = None  # MCS stream detected on, e.g. 'Filter (3)' when raw was not recorded
 
     @property
     def active_channels(self) -> tuple[str, ...]:
@@ -228,6 +229,7 @@ def detect_spikes(
         amps[c] = amp[sel].astype(np.float32)
         wfs[c] = wf[sel]
     trains = SpikeTrains.from_dict(times, t0, t0 + n / fs)
+    stream = recording.get_annotation("mcs_stream_label")
     if recording.has_probe():
         trains = trains.with_positions(channel_positions_um(recording))
     return DetectionResult(
@@ -240,4 +242,5 @@ def detect_spikes(
         recovery_ms=recoveries,
         config=cfg,
         stim=tuple(stim),
+        analog_stream=stream.split(";")[0].strip() if stream else None,
     )

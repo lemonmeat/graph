@@ -35,6 +35,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **Kumar et al. 2026 comparison** (2026-10-05, D23/D24 Proposed): `cch_gauss2` reproduces the paper's two-Gaussian weight (no test; NeuroExplorer normalization and lag range unknown). Threshold/sorting debate: keep 5σ and no sorting (4σ gives no power gain; 2.7σ is ~96 % noise; waveforms show no separable units at 10 kHz).
 - **Stimulation logs** (2026-10-08, D25 Proposed): `meagraph.io.stimlog` reads `<tag>.stimlog.csv` from the `mea-stim-protocols` script (C#, McsUsbNet), finds it by tag next to the recording, matches it to recorded STG events by order (checked by intervals; interval matching if counts differ), and sets `StimEvents.pulse_sites`. Per-pulse sites stay in detection with 50 ms blanking after their own pulses; `audit` checks each site against its artifact. `--stimlog auto|<path>|none`.
 - **2026-10-08 recordings are INVALID as culture data** (owner, 2026-10-08): the culture was not connected to the headstage and the headstage was not closed, for both `2026-10-08T19-17-36Flex_Electronics_Andre_Random1_2.h5` (random-site stimulation) and `2026-10-08T20-38-50Flex_Electronics_Andre_Spontaneous1.h5` (spontaneous). Their lack of spikes, 9.4 µV noise and 0.85 cross-electrode correlation reflect open inputs. Still valid from them: the stimulation log matched 186/186 pulses; Marker events are recorded; the stimulation script enabled hardware blanking per electrode on first use (artifact 2.3 → 0.02 mV; 57 = never-configured index 59), fixed in mea-stim-protocols random-sites-2 (all electrodes set up at start; amplitude in mV, default ±500 mV × 500 µs per Kumar et al., to be confirmed; amplitude sweep option).
+- **Recordings without a raw stream** (2026-11-04, D27 Proposed): `SessionConfig.stream` defaults to `"auto"` (raw if saved, else the end of the filter chain); `info`/`audit`/`detect` report it and `provenance.json` records `analog_stream`. Detection on Filter (3) matches raw for only 57–67 % of spikes and changes the QC-active set (causal phase). Running the documented chain backward over Filter (3) restores 96–97 % and identical active sets (proposal, Q23). Advised the owner to keep saving raw. Raw is now listed before a filter stream whose source was not saved (2026-11-03 files listed Filter (3) first).
 - **Next is Phase 5:** GLM (NeMoS), stimulus-evoked estimator, transfer entropy if practical.
 - Decisions D1–D17 and D21 are Accepted (D11 superseded by D21). D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults), D20 (self-contained result folders) and D22 (TSPE, CFP, inhibition) are Proposed.
 - **Legacy scripts retired** 2026-10-05 (see Existing code below).
@@ -51,6 +52,10 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **File format:** MCS HDF5, Multi Channel Experimenter 2.21 / DataManager 1.14, protocol RawData v3. Full layout in `docs/DATA_FORMAT.md`.
 - **Sampling rate:** 10 kHz in the current files (`Tick` = 100 µs). Always read it from `InfoChannel.Tick`.
 - **Analog stream index is not processing order.** `Stream_0` = raw, `Stream_3` = Filter 1, `Stream_2` = Filter 2, `Stream_1` = Filter 3. Select by label or lineage.
+- **MCS online filters** (owner, 2026-11-03; verified in all 5 spontaneous files, see `docs/DATA_FORMAT.md`):
+  - Filter 1 is a 2nd-order Butterworth HP at 200 Hz; Filter 2 is a 2nd-order Butterworth LP at 3500 Hz.
+  - Filter 3 is a 60 Hz pole-zero notch (r = 0.98). It is wide (|H| = 0.78 at 100 Hz) and not gain-normalized (×1.02 above 1 kHz).
+  - All three are causal: the chain delays 0.1 ms at 1 kHz. None of this is stored in the file. Analysis still filters raw (D2).
 - **Time base:** events and MCS segments are in µs on the recording clock. Analog data starts at `ChannelDataTimeStamps[0, 0]`, which is 0.5 s in the beforestim file.
 - **Stimulation events:** `EventEntity_<EventID>`. EventID 1 = STG 1 Single Pulse Start, 2 = Stop (+3 ms).
   - The **stimulated electrode is not recorded in the file.**
@@ -120,7 +125,7 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q1.** In-layer pitch only (layer spacing 250 µm, diameter 30 µm and layer 1 = bottom are settled).
 - **Q2 (remaining part).** Are the 5 empty cells absent, or present but unwired?
 - **Q4.** Planar 60 MEA type and sample files.
-- **Q5.** MCS Filter 1/2/3 and Spike Detector settings.
+- **Q5.** MCS Spike Detector settings. (Filters answered 2026-11-03.)
 - **Q6.** Stimulation amplitude units and mode, polarity, and the site for the 11-15 file. The artifact says 12, and Phase 2 results used 12.
 - **Q7.** Afterstim baseline, and longer or more active recordings. (The `data/` folder part is resolved: recordings live there.)
 - **Q8.** Detection threshold for analysis.
@@ -134,6 +139,7 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q22.** Accept D26 (discard crossings 2 ms before blanked windows; measure blank_pre per recording)? Re-check its evidence on a valid recording first (the 2026-10-08 examples came from an unconnected setup). (E-00278, E-00281 and E-00303 share the wiring: owner, 2026-10-08. Electrode 57's artifact is explained by the script, see above.)
 - **Q21.** Accept D25 (per-pulse sites from stimulation logs; stimulated electrodes kept, blanked 50 ms after their own pulses)?
 - **Q19.** Accept the D22 choices (inhibition model, TSPE significance and reverse rule, CFP test, CFP width rule, CFP boundary-delay rule)?
+- **Q23.** Recordings with only Filter (3): keep saving raw (recommended), or adopt the D27 phase correction (needs the online filter settings fixed, since they are not stored in the file)?
 - **Q18.** Accept D19? It would make the burst-removed analysis primary, set `drop_symmetric=False`, and make `cch_jitter` the primary method.
 
 Resolved 2026-10-03:

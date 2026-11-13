@@ -33,6 +33,8 @@ def _session(path: str, args: argparse.Namespace):
     from meagraph.io import load_session
 
     session = load_session(path, probe=args.probe, stim_site=_stim_site(args.stim_site), stimlog=_stimlog(args.stimlog))
+    if session.inventory.raw_stream is None:
+        print(f"  no raw stream recorded; using {session.analog_stream}")
     if session.stimlog is not None:
         print(f"  stimulation log: {session.stimlog.path.name}")
         for a in session.alignment:
@@ -292,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--electrode", default=None)
     p.add_argument("--t0", type=float, default=None, help="window start, s on the recording clock")
     p.add_argument("--win", type=float, default=2.0)
-    p.add_argument("--stream", default="raw", help="analog stream shown in the trace panel")
+    p.add_argument("--stream", default="auto", help="analog stream shown in the trace panel (default: the one analysed)")
     p.add_argument("--bandpass", action="store_true")
     p.add_argument("--save", help="render to an image instead of opening a window")
     p.set_defaults(func=_view)

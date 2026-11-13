@@ -37,6 +37,7 @@ class Provenance(BaseModel):
     dependencies: dict[str, str]
     created_utc: str
     inputs: list[InputFile]
+    analog_stream: str | None = None  # the MCS analog stream read from the input recording, if one was
 
 
 def _git(*args: str) -> str | None:
@@ -67,7 +68,7 @@ def _input_file(path: Path) -> InputFile:
     )
 
 
-def collect_provenance(inputs: Sequence[str | Path] = ()) -> Provenance:
+def collect_provenance(inputs: Sequence[str | Path] = (), analog_stream: str | None = None) -> Provenance:
     deps = {}
     for name in _TRACKED:
         try:
@@ -85,6 +86,7 @@ def collect_provenance(inputs: Sequence[str | Path] = ()) -> Provenance:
         dependencies=deps,
         created_utc=datetime.now(timezone.utc).isoformat(),
         inputs=[_input_file(Path(p)) for p in inputs],
+        analog_stream=analog_stream,
     )
 
 
@@ -93,6 +95,7 @@ def write_run_folder(
     config: BaseModel,
     inputs: Sequence[str | Path] = (),
     overwrite: bool = False,
+    analog_stream: str | None = None,
 ) -> Path:
     """Create ``out_dir`` with ``config.yaml`` and ``provenance.json``; returns the folder."""
     out = Path(out_dir)
@@ -100,6 +103,6 @@ def write_run_folder(
         raise FileExistsError(f"{out} is not empty; pass overwrite=True to reuse it")
     out.mkdir(parents=True, exist_ok=True)
     save_yaml(config, out / "config.yaml")
-    prov = collect_provenance(inputs)
+    prov = collect_provenance(inputs, analog_stream)
     (out / "provenance.json").write_text(json.dumps(prov.model_dump(mode="json"), indent=2) + "\n")
     return out

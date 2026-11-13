@@ -11,6 +11,7 @@ import numpy as np
 from meagraph.io._mcs_layout import (
     AnalogStreamInfo,
     StreamInfo,
+    analysis_stream,
     decode,
     list_analog_streams,
     recording_group,
@@ -94,6 +95,11 @@ def format_inventory(inv: FileInventory) -> str:
             f"    {s.short_label:<22} [{s.name}, {role}] {s.n_channels} ch @ {s.sampling_frequency_hz:g} Hz, "
             f"{s.duration_s:.3f} s from t = {s.t_start_s:.3f} s"
         )
+    if inv.analog_streams and inv.raw_stream is None:
+        try:
+            lines.append(f"  no raw stream recorded: analysis uses {analysis_stream(inv.analog_streams).short_label}")
+        except ValueError as exc:
+            lines.append(f"  {exc}")
     if inv.event_entities:
         lines.append("  event entities:")
         for e in inv.event_entities:

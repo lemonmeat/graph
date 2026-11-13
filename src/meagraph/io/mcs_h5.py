@@ -5,7 +5,7 @@ Differences from ``spikeinterface.extractors.read_mcsh5``:
 - data rows follow ``InfoChannel.RowIndex``
 - offsets are ``-ADZero * gain``
 - channel ids are electrode labels ('47'); the full MCS label and ChannelID are properties
-- streams are chosen by label or ``'raw'``, never by HDF5 index
+- streams are chosen by label, ``'auto'`` or ``'raw'``, never by HDF5 index
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import numpy as np
 from spikeinterface.core import BaseRecording, BaseRecordingSegment
 
 from meagraph.io._mcs_layout import (
-    RAW,
+    AUTO,
     channel_tick_us,
     decode,
     electrode_id,
@@ -35,12 +35,13 @@ class McsH5Recording(BaseRecording):
     file_path
         Path to the ``.h5`` file written by Multi Channel Experimenter / DataManager.
     stream
+        ``'auto'`` (the raw stream, or the end of the filter chain when raw was not recorded),
         ``'raw'`` (the hardware stream) or a stream label such as ``'Filter (3)'``.
     recording_index
         Index of ``Data/Recording_<n>``.
     """
 
-    def __init__(self, file_path: str | Path, stream: str = RAW, recording_index: int = 0):
+    def __init__(self, file_path: str | Path, stream: str = AUTO, recording_index: int = 0):
         file_path = Path(file_path).resolve()
         with h5py.File(file_path, "r") as f:
             rec = recording_group(f, recording_index)
@@ -139,6 +140,6 @@ class McsH5RecordingSegment(BaseRecordingSegment):
         return np.ascontiguousarray(block[inverse].T)
 
 
-def read_mcs_h5(file_path: str | Path, stream: str = RAW, recording_index: int = 0) -> McsH5Recording:
+def read_mcs_h5(file_path: str | Path, stream: str = AUTO, recording_index: int = 0) -> McsH5Recording:
     """Function form of :class:`McsH5Recording`."""
     return McsH5Recording(file_path, stream=stream, recording_index=recording_index)

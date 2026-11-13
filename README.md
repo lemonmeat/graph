@@ -87,6 +87,7 @@ graphs["cch_jitter"].no_bursts.edges()
 
 - **Times** are seconds on the MCS recording clock, the same clock as the stimulation events.
 - **Electrodes** are named by their MCS label (`"47"`). Electrode 15 is the reference and is dropped.
+- **Analog stream.** meagraph analyses the raw stream (`Data Acquisition`) and filters it itself. If a recording has no raw stream, for example when only `Filter (3)` was saved, it uses the last filter stream instead. `info`, `audit` and `detect` say so, and the detection folder's `provenance.json` records the stream used (`analog_stream`). Spikes detected on a filter stream are not interchangeable with spikes from raw (`docs/DECISIONS.md` D27), so record the raw stream whenever recordings will be compared with each other.
 - **Geometry.** Layer spacing (250 µm) and electrode diameter (30 µm) come from Kumar et al. 2026. The spacing within a layer is a placeholder until it is entered in `src/meagraph/probe/data/cube4x4x4_E-00303.yaml`. Grid positions (row, column, layer) are exact; layer 1 is the bottom.
 - **Docs:**
   - `docs/DATA_FORMAT.md`: the file format;

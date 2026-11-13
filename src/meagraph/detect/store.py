@@ -6,7 +6,8 @@ A result folder holds:
 - ``stimulation.csv``: one row per pulse (STG output, kind, onset, offset, site); header only
   for spontaneous recordings. ``site`` is the stimulated electrode of that pulse, if known: one
   site for a whole output (``--stim-site``) or one per pulse (a stimulation log)
-- ``config.yaml`` and ``provenance.json`` (see :func:`meagraph.config.write_run_folder`)
+- ``config.yaml`` and ``provenance.json`` (see :func:`meagraph.config.write_run_folder`); the
+  provenance names the MCS analog stream detection ran on (``analog_stream``)
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ def save_detection(result: DetectionResult, folder: str | Path, inputs: Sequence
     tr = result.trains
     if tr.n_units == 0:
         raise ValueError("nothing to save: the result has no channels")
-    out = write_run_folder(folder, result.config, inputs=inputs, overwrite=overwrite)
+    out = write_run_folder(folder, result.config, inputs=inputs, overwrite=overwrite, analog_stream=result.analog_stream)
     # Every channel's arrays exist, empty ones included, so concatenation keeps the waveform width.
     ids = np.concatenate([np.full(t.size, u) for u, t in zip(tr.unit_ids, tr.times_s)])
     np.savez_compressed(
@@ -106,6 +107,8 @@ def load_detection(folder: str | Path) -> DetectionResult:
     if not (folder / "stimulation.csv").exists():
         raise ValueError(f"{folder} was written by an older meagraph (no stimulation.csv); re-run `meagraph detect`")
     cfg = load_yaml(folder / "config.yaml", DetectionConfig)
+    prov = folder / "provenance.json"
+    stream = json.loads(prov.read_text()).get("analog_stream") if prov.exists() else None
     z = np.load(folder / "spikes.npz")
     order = [str(u) for u in z["unit_order"]]
     unit = z["unit_id"].astype(str)
@@ -142,4 +145,5 @@ def load_detection(folder: str | Path) -> DetectionResult:
         recovery_ms=recovery,
         config=cfg,
         stim=_read_stim(folder / "stimulation.csv"),
+        analog_stream=stream,
     )

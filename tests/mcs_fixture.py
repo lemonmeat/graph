@@ -81,8 +81,12 @@ def write_mcs_h5(
     stim_offset_delay_us: int = 3000,
     info_event_order=None,
     detector_spikes_us=None,
+    with_raw: bool = True,
 ) -> dict:
-    """Write a fixture file and return the ground truth needed to check readers against it."""
+    """Write a fixture file and return the ground truth needed to check readers against it.
+
+    ``with_raw=False`` saves only the filter stream, as when MCS Experimenter records a filter output alone.
+    """
     labels = list(labels)
     n_ch = len(labels)
     row_index = np.array(row_index if row_index is not None else list(range(n_ch))[::-1])
@@ -111,9 +115,10 @@ def write_mcs_h5(
         g = analog.create_group("Stream_0")
         _stream_attrs(g, "Filter (1);Filter; Filter Data1", FILTER_GUID, RAW_GUID, "Electrode", "Analog")
         _analog(g, labels, filtered, row_index, adzero, conversion, exponent, tick_us, first_timestamp_us, unit)
-        g = analog.create_group("Stream_1")
-        _stream_attrs(g, "Data Acquisition (1);MEA2100-Mini; Electrode Raw Data1", RAW_GUID, NULL_GUID, "Electrode", "Analog")
-        _analog(g, labels, raw, row_index, adzero, conversion, exponent, tick_us, first_timestamp_us, unit)
+        if with_raw:
+            g = analog.create_group("Stream_1")
+            _stream_attrs(g, "Data Acquisition (1);MEA2100-Mini; Electrode Raw Data1", RAW_GUID, NULL_GUID, "Electrode", "Analog")
+            _analog(g, labels, raw, row_index, adzero, conversion, exponent, tick_us, first_timestamp_us, unit)
 
         events = rec.create_group("EventStream").create_group("Stream_0")
         _stream_attrs(events, "Stimulator (1);Stimulator; STG Events1", STG_GUID, NULL_GUID, "StgSideband", "Event")

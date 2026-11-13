@@ -42,14 +42,24 @@ The files contain no `TimeStampStream` or `FrameStream`. Only `Recording_0` exis
 
 **Stream index is not processing order.** The lineage below is taken from `StreamGUID` → `SourceStreamGUID`. Readers must select streams by label or lineage, never by index.
 
-| HDF5 stream | Label | Source | Measured response vs raw |
+| HDF5 stream | Label | Source | Setting (owner, 2026-11-03; verified below) |
 |---|---|---|---|
 | `Stream_0` | `Data Acquisition (1);MEA2100-Mini; Electrode Raw Data1` | hardware | raw, DC-coupled |
-| `Stream_3` | `Filter (1);Filter; Filter Data1` | Stream_0 | high-pass ≈ 200 Hz (−3 dB), slope consistent with 2nd-order Butterworth |
-| `Stream_2` | `Filter (2);Filter; Filter Data2` | Stream_3 | adds a low-pass ≈ 3.5 kHz (|H| = 0.71 at 3.5 kHz, 0.10 at 4.5 kHz) |
-| `Stream_1` | `Filter (3);Filter; Filter Data3` | Stream_2 | adds further low-frequency attenuation (|H| 0.018 vs 0.062 at 50 Hz). Purpose unknown **(unverified)** |
+| `Stream_3` | `Filter (1);Filter; Filter Data1` | Stream_0 | 2nd-order Butterworth high-pass, 200 Hz |
+| `Stream_2` | `Filter (2);Filter; Filter Data2` | Stream_3 | 2nd-order Butterworth low-pass, 3500 Hz |
+| `Stream_1` | `Filter (3);Filter; Filter Data3` | Stream_2 | notch, 60 Hz |
 
-The responses were measured as the median over channels of √(PSD_stream / PSD_raw), Welch, beforestim 10–30 s:
+The settings come from the owner (2026-11-03). Each stage was checked against them in all five spontaneous recordings (DIV140 beforestim, DIV142, Day 47, Day 49, 2026-10-08 Spontaneous1). The transfer function between consecutive streams was estimated as the median over channels of P_xy / P_xx (Welch, 2¹⁵-sample segments, 0.3 Hz resolution, 30–60 s from t = 10 s):
+
+- **Filter 1 and Filter 2** match `scipy.signal.butter(2, 200, "highpass", fs=10000)` and `butter(2, 3500, "lowpass", fs=10000)` to within 0.004 in complex response from 20 to 4800 Hz in every file. The phase is that of a single forward pass, so these filters are **causal, not zero-phase**.
+- **Filter 3** is a pole-zero notch that is **not gain-normalized**: H(z) = (1 − 2 cos ω₀ z⁻¹ + z⁻²) / (1 − 2r cos ω₀ z⁻¹ + r² z⁻²), with ω₀ = 2π · 60 Hz / fs and r = 0.980. Fitting zero frequency, pole radius, pole angle and gain freely gave zeros at 60.00–60.01 Hz, r = 0.9800, pole angle 59.90–59.98 Hz and gain 0.998–1.000 in every file (rms error ≤ 0.0012). Its properties:
+  - The notch is wide: |H| = 0.5 at 41 and 79 Hz; 0.78 at 100 Hz; 0.89 at 120 Hz; 0.99 at 200 Hz.
+  - The gain differs on the two sides: 0.79 at DC, rising through 1.0 at about 250 Hz to **1.02 from about 1 kHz upward**. Filter (3) amplitudes, and therefore MCS Spike Detector cutouts, are about 2 % larger than in Filter (2).
+  - The notch removes only the 60 Hz fundamental, not its harmonics.
+
+**Full chain, raw → Filter (3).** −3 dB points are 206 and 3502 Hz, relative to a peak gain of 1.018 at 1.2 kHz. Being causal, the chain delays spikes: its group delay is 0.77 ms at 300 Hz, 0.29 ms at 500 Hz, 0.10 ms at 1 kHz and 0.08 ms at 2 kHz. meagraph filters raw itself with a zero-phase band-pass (D2), so none of this affects its spike times or waveforms. It does affect the MCS Spike Detector, which runs on Filter (3).
+
+The cumulative responses against raw were first measured in Phase 0 as the median over channels of √(PSD_stream / PSD_raw) (Welch, beforestim 10–30 s). They agree with the settings above (for example, 0.0623 × 0.291 = 0.018 at 50 Hz for the full chain):
 
 | f (Hz) | 50 | 100 | 200 | 300 | 500 | 1000 | 3000 | 3500 | 4000 | 4500 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -57,9 +67,11 @@ The responses were measured as the median over channels of √(PSD_stream / PSD_
 | Filter 2 | 0.062 | 0.242 | 0.707 | 0.914 | 0.986 | 0.998 | 0.896 | 0.706 | 0.376 | 0.096 |
 | Filter 3 | 0.018 | 0.189 | 0.697 | 0.920 | 1.002 | 1.016 | 0.914 | 0.720 | 0.383 | 0.098 |
 
-Filters 1 and 2 together match the Kumar et al. 2026 methods: a "second-order Butterworth band-pass 200 Hz to 3,500 Hz". All filter streams show zero-sample lag against raw.
+Filters 1 and 2 together match the Kumar et al. 2026 methods: a "second-order Butterworth band-pass 200 Hz to 3,500 Hz". Phase 0 reported zero-sample lag against raw; that was the peak of the cross-correlation, and the filters do have the group delay given above.
 
-**The software filter settings are not stored in the file.** The `HighPass*` and `LowPass*` fields of `InfoChannel` are empty or −1 for every stream. This is the main reason the pipeline should filter raw `Stream_0` itself (see `DECISIONS.md`).
+**The software filter settings are not stored in the file.** The `HighPass*` and `LowPass*` fields of `InfoChannel` are empty or −1 for every stream. The settings above come from the owner and from measurement. Future recordings made with different settings could only be detected by repeating the measurement. This was the original reason for the pipeline to filter raw `Stream_0` itself (see `DECISIONS.md` D2).
+
+**Other stream sets.** The 2026-11-03 recordings (20 kHz) save only raw (`Stream_1`) and `Filter (3)` (`Stream_0`), whose source stream is absent from the file. Files may also be saved with `Filter (3)` alone; meagraph then analyses it (`DECISIONS.md` D27).
 
 **Length mismatch.** In beforestim, the filter streams have 3,170,000 samples against 3,171,000 for raw. They share the same first timestamp, so they end 0.1 s earlier. In the stim files all four streams have equal length.
 
@@ -254,7 +266,7 @@ MCS files record when each STG output fired, but not which electrode it was rout
 
 | Stream | Label | Source | Entities |
 |---|---|---|---|
-| `Stream_1` | `Spike Detector (1)` | analog `Stream_1` (Filter 3) | 60, one per electrode |
+| `Stream_1` | `Spike Detector (1)` | analog `Stream_1` (Filter 3: causal 200–3500 Hz band-pass plus 60 Hz notch) | 60, one per electrode |
 | `Stream_0` | `Spike Sorter (1)` | the Spike Detector | 121 / 311 / 244 units (`Sorter Unit` column) |
 
 **Cutouts:** 31 samples. `PreInterval` is 1000 µs and `PostInterval` is 2000 µs, so the detection sample is at index 10. Values are int32 in the source stream's ADC units, at the same 8.67 nV scale. Timestamps are in µs on the recording clock.

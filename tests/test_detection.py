@@ -132,6 +132,7 @@ def test_detection_folder_keeps_positions_and_rejects_old_format(make_mcs_file, 
     assert res.stim == ()
     folder = save_detection(res, tmp_path / "det")
     back = load_detection(folder)
+    assert back.analog_stream == res.analog_stream == session.analog_stream == "Data Acquisition (1)"
     np.testing.assert_allclose(back.trains.positions_um, session.recording.get_channel_locations(axes="xyz"), rtol=1e-6)
     assert back.stim == ()
     (folder / "stimulation.csv").unlink()

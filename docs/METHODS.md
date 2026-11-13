@@ -9,6 +9,8 @@ This file is written so it can be adapted for the independent work report. Param
 - **Geometry.** Electrodes are 30 µm gold discs on four stacked layers separated by 250 µm (Kumar et al., 2026); layer 1 is the bottom. Positions are given as (row, column, layer). The in-layer electrode pitch was not available, so distances within a layer are placeholders and no analysis interprets them physically.
 - **Sampling.** 10 kHz, 24-bit (8.67 nV per bit, ±72.7 mV range).
 - **Data used.** Raw, unfiltered data was saved by Multi Channel Experimenter in MCS HDF5 format. All analysis starts from the raw stream; filtering in the acquisition software was not used (DECISIONS.md D2).
+  - The acquisition software also saved online-filtered copies, produced by causal filters in series: a 2nd-order Butterworth high-pass at 200 Hz, a 2nd-order Butterworth low-pass at 3500 Hz, and a 60 Hz notch.
+  - Those copies were used only for display. The MCS online spike detector ran on the last of them, and its events were not used for analysis.
 - **Software.** Data were read and processed with SpikeInterface (Buccino et al., 2020). The electrode geometry was represented as a ProbeInterface probe (Garcia et al., 2022). See `meagraph.io` and `meagraph.probe`.
 
 ## Spike detection (`meagraph.detect`)

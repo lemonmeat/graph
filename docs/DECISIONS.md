@@ -39,9 +39,11 @@ Neo has no MCS HDF5 reader (`RawMCSRawIO` handles `.raw` only). McsPy (`McsPyDat
 **Why.**
 
 - The filter parameters are not stored in the file. Filter 3 is unknown and was only measured empirically.
+  - *Update 2026-11-03:* the owner supplied the settings (2nd-order Butterworth HP 200 Hz, 2nd-order Butterworth LP 3500 Hz, 60 Hz notch), and they were verified in five recordings (`DATA_FORMAT.md` § Analog streams). The decision still stands. The online filters are causal and so delay and reshape spikes; they run before any artifact bridging can be applied; and the notch is not gain-normalized (+2 % above 1 kHz).
 - The MCS detector's threshold and polarity are not stored.
 - In the stim files, 55 % of MCS detector events sit within 15 ms of a stimulus pulse.
 - `spikes.py` already uses `Stream_0`, so regression is direct.
+- *2026-11-04:* recordings saved without a raw stream are read from the end of the filter chain instead (D27).
 
 ---
 
@@ -585,3 +587,36 @@ For correlation methods, independent noise spikes add variance without adding si
 
 **Proposal.** A symmetric guard: also discard peaks (and exclude QC events) within 2 ms before each window; and measure, per recording, how long before the recorded onset the raw signal starts to change, to set `blank_pre_ms`. This changes detection output on stimulation recordings, so the detection snapshot would be regenerated with the change.
 
+
+---
+
+## D27. Recordings without a raw stream: analyse the end of the filter chain
+
+**Status:** Proposed 2026-11-04 (the fallback is implemented; the phase correction in point 3 is not, and awaits the owner)
+
+**Problem.** The owner plans to save only the `Filter (3)` stream. Every reader asked for the raw stream (D2), so such files could not be opened for analysis.
+
+**What was implemented.**
+
+1. **Stream choice.** `SessionConfig.stream` now defaults to `"auto"`: the raw stream if it was recorded (D2 unchanged), otherwise the end of the recorded filter chain (`meagraph.io._mcs_layout.analysis_stream`). If several filter streams were saved without raw and they are not one chain, the reader stops with an error. `"raw"` and stream labels still work as before. No CLI option was added.
+2. **Reporting.** `meagraph info`, `audit` and `detect` print the stream used when there is no raw stream. `DetectionResult.analog_stream` holds it, and the detection folder's `provenance.json` records it (`analog_stream`). Detection itself is unchanged: the 300–3000 Hz zero-phase band-pass (D10) runs on top of the MCS filters.
+3. **Also fixed.** A filter stream whose source was not saved counted as a root of the lineage, so files with only raw and `Filter (3)` (all 2026-11-03 recordings) listed `Filter (3)` first, and the viewer showed it as the default trace. Raw now always comes first. The real-file tests no longer assume every file is a 10 kHz, four-stream recording.
+
+**Evidence: detection on Filter (3) is not interchangeable with raw.** Default `DetectionConfig`, run on the raw and the `Filter (3)` stream of the same file. Spikes on the same electrode within ±0.5 ms count as matched, over the union of QC-active electrodes:
+
+| Recording | Spikes matched (% of raw, % of Filter 3) | QC-active electrodes |
+|---|---|---|
+| DIV142 spontaneous, 10 kHz | 57 %, 60 % | 3 shared; 5 raw-only, 3 Filter-3-only |
+| 2026-11-03 Baseline1, 20 kHz | 67 %, 72 % | 11 shared; 4 raw-only, 2 Filter-3-only |
+| 2026-11-03 Random1, 20 kHz (log ignored) | 67 %, 69 % | 8 shared; 3 raw-only, 9 Filter-3-only |
+
+Amplitudes (median ratio 0.95–0.99) and noise (0.97–0.99) barely differ, and the median lag of matched spikes is 0–0.05 ms. The difference is the phase of the causal online chain (`DATA_FORMAT.md` § Analog streams). It reshapes spikes, which moves near-threshold events across the 5σ threshold, and changes which peak of an event is larger, which moves the polarity QC and the rebound rejection.
+
+**Proposal (not implemented): undo the phase.** Run the documented chain (Butterworth HP 200 Hz and LP 3500 Hz, both 2nd order; notch at 60 Hz, r = 0.98) backward in time over `Filter (3)` before the detection band-pass. The online forward pass and this backward pass together are zero-phase with gain |H|², which is 0.85–1.03 across 300–3000 Hz. Measured on the same files:
+
+| Recording | Spikes matched with raw | QC-active electrodes | Model check (raw run forward and backward through the chain, vs corrected Filter 3) |
+|---|---|---|---|
+| DIV142, 10 kHz | 96.0 %, 96.5 % | all 8 identical | 99.9 % of raw-chain spikes matched |
+| 2026-11-03 Baseline1, 20 kHz | 96.7 %, 95.8 % | all 15 identical | 100.0 % |
+
+The model check also confirms the filter settings at 20 kHz, where they had not been measured before. The risk is that the settings are not stored in the file (D2): if they are changed in Experimenter, the correction becomes silently wrong, and with no raw stream it cannot be re-checked. The recommendation to the owner is therefore to keep saving the raw stream (alone, or with `Filter (3)`), and to adopt the correction only if filter-only files are recorded anyway (Q23).

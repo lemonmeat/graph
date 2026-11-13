@@ -35,6 +35,21 @@ def test_inventory_orders_streams_by_lineage(mcs_file):
     assert {s.short_label: s.n_events for s in inv.segment_streams} == {"Spike Sorter (1)": 4, "Spike Detector (1)": 4}
 
 
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_cli_detects_on_the_filter_stream_when_raw_was_not_recorded(make_mcs_file, capsys):
+    from meagraph.detect import load_detection
+    from meagraph.detect.store import find_detection
+
+    path, _ = make_mcs_file(n_samples=20_000, with_raw=False)
+    assert main(["info", str(path)]) == 0
+    assert "no raw stream recorded: analysis uses Filter (1)" in capsys.readouterr().out
+    assert main(["detect", str(path)]) == 0
+    assert "no raw stream recorded; using Filter (1)" in capsys.readouterr().out
+    folder = find_detection(path)
+    assert json.loads((folder / "provenance.json").read_text())["analog_stream"] == "Filter (1)"
+    assert load_detection(folder).analog_stream == "Filter (1)"
+
+
 def test_cli_info_and_probes(mcs_file, capsys):
     assert main(["info", str(mcs_file[0])]) == 0
     out = capsys.readouterr().out

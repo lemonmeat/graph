@@ -9,6 +9,7 @@ from pathlib import Path
 from spikeinterface.core import BaseRecording
 
 from meagraph.config.models import SessionConfig
+from meagraph.io._mcs_layout import short_label
 from meagraph.io.inventory import FileInventory, inspect_file
 from meagraph.io.mcs_events import StimEvents, read_stim_events
 from meagraph.io.mcs_h5 import McsH5Recording
@@ -23,6 +24,7 @@ class Session:
     recording: BaseRecording  # probe attached; channels not on the probe removed
     probe_spec: ProbeSpec
     excluded_channel_ids: tuple[str, ...]  # e.g. the reference electrode
+    analog_stream: str  # short label of the stream read: 'Data Acquisition (1)' (raw) or e.g. 'Filter (3)'
     stim: tuple[StimEvents, ...]
     inventory: FileInventory
     stimlog: StimLog | None = None
@@ -60,8 +62,8 @@ def load_session(config: SessionConfig | str | Path, **overrides) -> Session:
     if overrides:
         config = config.model_copy(update=overrides)
     spec = load_probe_spec(config.probe)
-    raw = McsH5Recording(config.path, stream=config.stream, recording_index=config.recording_index)
-    recording, excluded = attach_probe(raw, spec)
+    mcs = McsH5Recording(config.path, stream=config.stream, recording_index=config.recording_index)
+    recording, excluded = attach_probe(mcs, spec)
     stim = _assign_sites(read_stim_events(config.path, config.recording_index), config.stim_site)
     log, alignment = None, ()
     log_path = None
@@ -75,7 +77,7 @@ def load_session(config: SessionConfig | str | Path, **overrides) -> Session:
         log = read_stimlog(log_path)
         stim, reports = align_stimlog(stim, log)
         alignment = tuple(reports)
-    channels = set(raw.channel_ids)
+    channels = set(mcs.channel_ids)
     for s in stim:
         sites = s.sites
         unknown = sorted({x for x in sites if x and x not in channels}) if sites is not None else []
@@ -86,6 +88,7 @@ def load_session(config: SessionConfig | str | Path, **overrides) -> Session:
         recording=recording,
         probe_spec=spec,
         excluded_channel_ids=excluded,
+        analog_stream=short_label(mcs.get_annotation("mcs_stream_label")),
         stim=tuple(stim),
         inventory=inspect_file(config.path, config.recording_index),
         stimlog=log,
