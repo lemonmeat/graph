@@ -8,7 +8,7 @@ import numpy as np
 from meagraph.intervals import inside, merge_intervals
 
 CORE = ["meagraph", "meagraph.io", "meagraph.probe", "meagraph.config", "meagraph.preprocess", "meagraph.stimulation",
-        "meagraph.detect", "meagraph.connectivity", "meagraph.connectivity.pipeline", "meagraph.synth", "meagraph.benchmark",
+        "meagraph.detect", "meagraph.connectivity", "meagraph.connectivity.pipeline", "meagraph.evoked", "meagraph.synth", "meagraph.benchmark",
         "meagraph.cli"]  # fmt: skip
 
 

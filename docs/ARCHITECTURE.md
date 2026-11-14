@@ -21,6 +21,7 @@ Each layer imports only from layers below it. There are no cycles.
  validation    benchmark ── synth (Hawkes networks with known excitatory and inhibitory connections)
                  │
  graphs        connectivity.pipeline  (detection result → burst-controlled graphs, GraphConfig)
+               evoked                 (detection result → per-site evoked responses and site decoding, EvokedConfig)
                  │            │
  estimators      │      connectivity  (cch_hollow, cch_jitter, sttc, tspe, cfp, cch_gauss2; ConnectivityResult; graph files)
                  │            │         depends only on SpikeTrains: any spike source can feed it
@@ -92,11 +93,12 @@ Every config is a frozen pydantic model next to the step that uses it, saved as 
 | `stimulation` | Fixed and per-pulse blanking windows, `measure_recovery`, `infer_site`, `audit_stimulation`, `stimulation_periods`. |
 | `detect` | `DetectionConfig`, `detect_spikes`, polarity QC (D10), noise, network bursts (D15), result folders. |
 | `connectivity` | Estimator registry and `estimate`, `cch_hollow`, `cch_jitter`, `sttc`, `tspe` (signed: excitatory and inhibitory, via Elephant), `cfp`, `cch_gauss2` (Kumar et al. 2026 weight, no test), surrogates and fitted p-values (D17), FDR, graph files. `pipeline.py` connects it to detection results. |
+| `evoked` | Stimulus-evoked responses per site (D28): evoked bursts against state-matched shams, spike responses per electrode, cross-validated site decoding (all, unstimulated readouts, site pairs). Reads only a `DetectionResult`. |
 | `synth` | Hawkes network with known connections, optional inhibitory units (D22) and optional confounds (D16). |
 | `benchmark` | Scenarios, scoring (including indirect false positives), parallel runner. |
 | `viz` | Plotting functions: data and an optional `ax` in, artists out, no file I/O. `plot_connectivity` is the `meagraph plot` figure (top 4 correlograms; clicking an electrode shows its label, rate and its own top 4). |
 | `viewer` | Interactive viewer (D12), `meagraph view`. Nothing else imports it. Takes a `.h5` or `results/<recording>`; without the `.h5` it shows everything but the voltage trace (see below). |
-| `cli` | `info`, `probes`, `audit`, `detect`, `graph`, `plot`, `benchmark`, `view`. Each command is a thin wrapper over library calls. |
+| `cli` | `info`, `probes`, `audit`, `detect`, `graph`, `evoked`, `plot`, `benchmark`, `view`. Each command is a thin wrapper over library calls. |
 | `realtime`, `reservoir` | Empty placeholders for Phase 7. |
 
 ## Output folders
@@ -114,6 +116,13 @@ results/<recording>/
     network_bursts.csv           burst periods removed for no_bursts/
     all/, no_bursts/, robust/    each: graph.graphml, graph.json, edges.csv, matrices.npz, result.json,
                                  config.yaml (estimator params + GraphConfig), provenance.json (input: spikes.npz)
+  evoked/                        meagraph evoked (stimulation recordings)
+    sites.csv                    per site and state: evoked-burst probability, Wilson CI, sham rate, p
+    responses.csv                per site and electrode: spikes vs sham, first-spike latency, p, q
+    channels.csv                 per electrode: window start after blanking, how well it separates sites
+    trials.csv                   per pulse: site, state, time since last burst, burst latency, spikes per electrode
+    decoding.json                per task: classes, balanced accuracy, permutation p, recall, confusion; site_pairs
+    psth.npz, network_bursts.csv, config.yaml (EvokedConfig), provenance.json
 ```
 
 ## Extension points

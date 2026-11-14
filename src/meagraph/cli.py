@@ -162,6 +162,74 @@ def _graph(args: argparse.Namespace) -> int:
     return 0
 
 
+def _evoked(args: argparse.Namespace) -> int:
+    from meagraph.detect.store import detection_folder_for, load_detection
+    from meagraph.evoked import EvokedConfig, evoked_from_detection, save_evoked
+
+    folder = Path(args.spikes) if args.spikes else detection_folder_for(args.path)
+    if folder is None:
+        raise SystemExit(f"no detection results for {Path(args.path).name}; run `meagraph detect` first")
+    detection = load_detection(folder)
+    if not any(s.n for s in detection.stim):
+        raise SystemExit(f"{folder.parent.name}: no stimulation pulses")
+    config = EvokedConfig(channels=args.channels, bins_ms=tuple(args.bins_ms), active_gap_s=args.active_gap_s,
+                          n_permutations=args.permutations, min_trials=args.min_trials)  # fmt: skip
+    res = evoked_from_detection(detection, config)
+    out = save_evoked(res, folder.parent / "evoked", inputs=[folder / "spikes.npz"], overwrite=True)
+
+    lo, hi = config.window_ms
+    states = {s: int((res.shams.state == s).sum()) for s in ("silent", "active", "in_burst")}
+    print(f"{folder.parent.name}: {len(res.pulses.onset_s)} pulses at {len(res.sites)} sites, "
+          f"{len(res.channels)} {args.channels} channels, {len(res.bursts)} network bursts")
+    print(f"  window {lo:g}-{hi:g} ms after onset (later on electrodes still blanked; see channels.csv); "
+          f"{len(res.shams.onset_s)} sham times {states}")
+    if res.n_dropped_pre:
+        print(f"  dropped {res.n_dropped_pre} spikes in the {config.drop_pre_ms:g} ms before pulses (pulse-locked artifact, D26)")
+    print(f"\n  evoked burst onsets ({config.burst_from_ms:g}-{hi:g} ms), pulses vs shams in the same state:")
+    print(f"    {'site':>6}  {'all':>22}  {'silent':>14}  {'active':>14}  {'in burst':>14}")
+    for site in res.sites:
+        rows = {r["state"]: r for r in res.site_table if r["site"] == site}
+        a = rows["all"]
+        cells = [f"{rows[s]['n_evoked']}/{rows[s]['n_pulses']} ({rows[s]['p_sham']:.0%})" if rows[s]["n_pulses"] else "-"
+                 for s in ("silent", "active", "in_burst")]  # fmt: skip
+        print(f"    {site:>6}  {a['n_evoked']:>3}/{a['n_pulses']:<3} vs {a['p_sham']:5.1%} p {a['p_value']:<6.2g}"
+              f"  {cells[0]:>14}  {cells[1]:>14}  {cells[2]:>14}")  # fmt: skip
+    sig = [r for r in res.response_table if r["q_value"] < config.alpha]
+    print(f"\n  spike responses outside bursts (q < {config.alpha:g}): {len(sig)} site-electrode pairs")
+    for r in sorted(sig, key=lambda r: r["q_value"])[:10]:
+        print(f"    {r['site']:>6} -> {r['channel']:<4} {r['mean_spikes']:.2f} vs {r['mean_spikes_sham']:.2f} spikes, "
+              f"first spike {r['median_first_ms']:.0f} ms, q {r['q_value']:.2g}")  # fmt: skip
+    print("\n  decoding the stimulated site from responses (cross-validated balanced accuracy):")
+    for task, d in res.decoding.items():
+        if task == "site_pairs":
+            continue
+        if "skipped" in d:
+            print(f"    {task}: skipped ({d['skipped']}); trials {dict(zip(d['classes'], d['n_trials']))}")
+            continue
+        print(f"    {task}: {d['balanced_accuracy']:.2f} vs chance {d['chance']:.2f} (permutation mean "
+              f"{d['null_mean']:.2f}, p {d['p_value']:.2g}); {len(d['classes'])} classes, {d['n_folds']} folds")
+        print("      recall: " + ", ".join(f"{c} {v:.2f}" for c, v in d["recall"].items()))
+    pairs = res.decoding.get("site_pairs", [])
+    if pairs:
+        sites = sorted({r["a"] for r in pairs} | {r["b"] for r in pairs})
+        acc = {(r["a"], r["b"]): r for r in pairs} | {(r["b"], r["a"]): r for r in pairs}
+        print(f"  pairwise site decoding (balanced accuracy; * q < {config.alpha:g}):")
+        print("    " + " " * 6 + "".join(f"{s:>7}" for s in sites))
+        for a in sites:
+            cells = [("      -" if a == b else f"{acc[a, b]['balanced_accuracy']:6.2f}{'*' if acc[a, b]['q_value'] < config.alpha else ' '}")
+                     for b in sites]  # fmt: skip
+            print(f"    {a:>6}" + "".join(cells))
+    top = sorted((r for r in res.channel_table if r["q_value"] == r["q_value"]), key=lambda r: r["p_value"])[:8]
+    if top:
+        print("  electrodes that best separate sites (Kruskal-Wallis): "
+              + ", ".join(f"{r['channel']} (q {r['q_value']:.2g})" for r in top))
+    small = [s for s in res.sites if (res.pulses.label == s).sum() < config.min_trials]
+    if small:
+        print(f"  not decoded (< {config.min_trials} pulses): {small}")
+    print(f"  wrote {out}")
+    return 0
+
+
 def _benchmark(args: argparse.Namespace) -> int:
     from meagraph.benchmark import inhibition_scenarios, run_benchmark, scenarios, summarize, write_rows
     from meagraph.synth import NetworkConfig
@@ -275,6 +343,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--exclude-stim-ms", type=float, default=200.0,
                    help="drop spikes from each pulse to this long after it (stimulation recordings; 0 keeps them)")
     p.set_defaults(func=_graph)
+
+    p = sub.add_parser("evoked", help="evoked responses per stimulation site: bursts vs sham, electrode responses, site decoding")
+    p.add_argument("path", help="recording (.h5; the file need not exist), results/<recording>, or a detection folder")
+    p.add_argument("--spikes", help="detection folder, if not the default one")
+    p.add_argument("--channels", choices=["active", "all"], default="active", help="readout electrodes (default: QC-active)")
+    p.add_argument("--bins-ms", type=float, nargs="+", default=[12.0, 30.0, 60.0, 100.0, 150.0],
+                   help="response window and decoder bins: edges in ms after pulse onset")
+    p.add_argument("--active-gap-s", type=float, default=5.0,
+                   help="a pulse is in an 'active' period if the last burst ended less than this long before it")
+    p.add_argument("--permutations", type=int, default=200, help="label permutations for the decoding p-value")
+    p.add_argument("--min-trials", type=int, default=5, help="sites with fewer pulses are not decoded")
+    p.set_defaults(func=_evoked)
 
     p = sub.add_parser("plot", help="draw a saved graph in 3D with its top 4 correlograms; click an electrode for its own")
     p.add_argument("path", help="results/<recording>, its graph_<method> folder, or one of all/no_bursts/robust inside it "

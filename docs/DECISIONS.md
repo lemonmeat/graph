@@ -620,3 +620,41 @@ Amplitudes (median ratio 0.95–0.99) and noise (0.97–0.99) barely differ, and
 | 2026-11-03 Baseline1, 20 kHz | 96.7 %, 95.8 % | all 15 identical | 100.0 % |
 
 The model check also confirms the filter settings at 20 kHz, where they had not been measured before. The risk is that the settings are not stored in the file (D2): if they are changed in Experimenter, the correction becomes silently wrong, and with no raw stream it cannot be re-checked. The recommendation to the owner is therefore to keep saving the raw stream (alone, or with `Filter (3)`), and to adopt the correction only if filter-only files are recorded anyway (Q23).
+
+---
+
+## D28. Stimulus-evoked responses per site, for choosing closed-loop inputs and readouts
+
+**Status:** Proposed 2026-11-12 (implemented as `meagraph evoked`; the parameter choices below await the owner)
+
+**Problem.** In the 2026-11-12 recordings no connectivity edge survives the burst control, yet bursts follow stimulation. Closed-loop training needs to know which sites drive the culture, which electrodes respond, and whether different sites give different responses (otherwise the agent has fewer actions than sites). Connectivity graphs do not answer this.
+
+**What was added.** `meagraph.evoked` (`evoked_from_detection`, `evoked_responses`, `save_evoked`) and `meagraph evoked <results/recording>`. It reads only the detection folder and writes `results/<recording>/evoked/` (`sites.csv`, `responses.csv`, `channels.csv`, `trials.csv`, `decoding.json`, `psth.npz`, `network_bursts.csv`, config, provenance). For each site:
+
+1. **Evoked bursts.** P(network-burst onset from pulse onset to 150 ms), with a Wilson interval, against sham times (a 0.25 s grid at least 1 s after any pulse and with no pulse in its window) in the same network state, by a one-sided binomial test. States: `in_burst` (pulse inside a burst), `active` (last burst ended < 5 s before), `silent`. The "all" comparison weights the sham rate by the site's own mix of states.
+2. **Spike responses.** Spikes per readout electrode 12–150 ms after the pulse against shams, both outside bursts (Mann–Whitney, BH over site × electrode), first-spike latency and PSTHs.
+3. **Decoding.** Multinomial logistic regression (ridge 1.0, standardized sqrt counts in bins 12/30/60/100/150 ms), stratified 5-fold CV repeated 5 times, balanced accuracy, label-permutation p (200; the whole CV is repeated per permutation). Four tasks: sites; sites + sham; sites from electrodes never stimulated in the session; and every pair of sites (100 permutations, BH), which is the basis for choosing a set of mutually distinguishable inputs.
+
+**Choices made, for review:**
+
+1. **Blanking is equalized across conditions.** Each electrode's response window starts at the latest blanking end over every output and site (pulse + recovery, or 50 ms for a stimulated electrode (D25) or an unrecovered one, + guard), for pulses and shams alike. Without this the decoder could recognize a site from where its electrode is blanked. Cost: every stimulated electrode is read only from ~52 ms.
+2. **Spikes in the 2 ms before each pulse are dropped** (`drop_pre_ms`). In both 2026-11-12 stimulation recordings every active electrode has crossings 1.0–1.5 ms before onset (36 and 8 on active electrodes; 156 and 51 over all electrodes) and none in the 4.5 ms before that. This is D26's problem on a valid recording. Kept, they start a "burst" 1 ms before the pulse: 41/120 pulses were labelled `in_burst` and their evoked bursts were not counted.
+3. **Burst onsets count from 0 ms, not 12 ms.** Evoked bursts start at 9–12 ms (the first spikes after blanking), so a 12 ms lower edge missed most of them.
+4. **The state threshold (5 s) and the 12–150 ms window** are the defaults chosen from the Culture1 burst statistics; they are parameters.
+
+**First results (2026-11-12, E-00278, 1000 mV biphasic 500 µs/phase, 8 sites).** `21-55-43`, 15 pulses per site; `21-28-58`, 5 per site (76 in place of 56):
+
+| Site | Evoked bursts, 21-55-43 | 21-28-58 |
+|---|---|---|
+| 68 | 15/15 | 4/5 |
+| 36 | 14/15 | 4/5 |
+| 58 | 14/15 | 4/5 |
+| 46 | 12/15 | 4/5 |
+| 56 | 10/15 | not used |
+| 76 | not used | 4/5 |
+| 21 | 6/15 | 1/5 |
+| 55, 61 | 0/15 | 0/5 |
+
+Sham rates are 0.2–1.6 %. Bursts are evoked from silent periods too (e.g. 36 8/8, 68 5/5), unlike 500 mV on 2026-11-10 (0/23). Evoked spikes have spontaneous-like waveforms (all negative, same amplitude; correlation 0.97 for stimulated electrodes' own post-pulse spikes). Order: 76, 62 and 67 at 15–25 ms, then 51 and 43 at 25–40 ms, with 46 elevated for over 150 ms. 61, 55 and 21 do not evoke bursts but their own electrodes fire after their pulses (61: 3.1 spikes, first at 74 ms, on 15/15).
+
+Decoding (21-55-43, chance 0.125): sites 0.48, sites from unstimulated readouts (44, 43, 52, 51, 62, 76, 67) 0.33, both p 0.005. The confusion matrix has two blocks: burst sites (36, 46, 58, 68; 56 partly) and non-burst sites (21, 55, 61). Pairs within the non-burst block are at 0.50. Within the burst block, 36 vs 58 is 0.81 (q < 0.05) and 1.00 in 21-28-58; 46 is not separable from 36, 58 or 68 in either session. 56 separates from every site (0.74–0.86), perhaps only through its 67 % burst probability. With 5 pulses per site no pair reaches q < 0.05 (the permutation p cannot fall much below 0.01–0.03), so site-pair claims need at least ~15 pulses per site.
