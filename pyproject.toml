@@ -7,7 +7,7 @@ name = "meagraph"
 version = "0.1.0.dev0"
 description = "Functional connectivity, stimulation and reservoir analysis for 3D and planar MEA recordings (MCS HDF5)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     # D6: SpikeInterface is pinned to a minor version because its API changes between minors.
     "spikeinterface>=0.105,<0.106",
