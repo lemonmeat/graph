@@ -16,7 +16,7 @@ from spikeinterface.core import BaseRecording
 from spikeinterface.sortingcomponents.peak_detection import detect_peaks
 
 from meagraph.detect.noise import median_abs_noise_uv
-from meagraph.io.mcs_events import StimEvents
+from meagraph.io.mcs_events import StimEvents, mixed_conditions
 from meagraph.preprocess import detection_band, merge_windows
 from meagraph.probe.build import channel_positions_um
 from meagraph.spiketrains import SpikeTrains
@@ -45,6 +45,10 @@ class DetectionConfig(BaseModel):
     recovery_min_post_ms: PositiveFloat = 1.0
     recovery_max_post_ms: PositiveFloat = 50.0
     recovery_threshold_sigma: PositiveFloat = 1.0
+    # When one output's pulses have several stimulus conditions (amplitude, phase, waveform from a
+    # stimulation log), measure the recovery for each condition's pulses separately: a larger pulse
+    # leaves a longer artifact. Outputs with one condition are measured as a whole, as before.
+    recovery_per_condition: bool = True
     # Signal-quality control: a channel is "active" when negative peaks outnumber positive ones.
     # Counted outside stimulation and the qc_exclude_post_ms after each pulse, where evoked
     # responses and artifact residue are not spontaneous-like.
@@ -79,41 +83,64 @@ class DetectionResult:
     noise_uv: dict[str, float]
     qc: ChannelQC
     excluded: dict[str, str]  # channel id -> reason; no spikes are reported for these
-    recovery_ms: dict[str, dict[str, float]]  # STG source -> channel -> ms (adaptive blanking only)
+    # Recovery key -> channel -> ms (adaptive blanking only). The key is the STG output ("STG 1"),
+    # or "STG 1 @ <condition>" for each condition of an output that mixes conditions (recovery_key).
+    recovery_ms: dict[str, dict[str, float]]
     config: DetectionConfig
-    stim: tuple[StimEvents, ...] = ()  # the events that were blanked, with their sites
+    stim: tuple[StimEvents, ...] = ()  # the events that were blanked, with their sites and conditions
     analog_stream: str | None = None  # MCS stream detected on, e.g. 'Filter (3)' when raw was not recorded
 
     @property
     def active_channels(self) -> tuple[str, ...]:
         return tuple(c for c, a in zip(self.qc.channel_ids, self.qc.active) if a and c not in self.excluded)
 
+    def recovery_for(self, source: str, condition: str = "") -> dict[str, float]:
+        """Channel -> recovery (ms) that blanked the pulses of ``source`` with ``condition``: the
+        condition's own measurement if the output mixed conditions, else the output's."""
+        key = recovery_key(source, condition)
+        return self.recovery_ms[key] if key in self.recovery_ms else self.recovery_ms.get(source, {})
+
+
+def recovery_key(source: str, condition: str = "") -> str:
+    """Key of a recovery measurement in :attr:`DetectionResult.recovery_ms`."""
+    return f"{source} @ {condition}" if condition else source
+
 
 def _blanking(recording: BaseRecording, stim: Sequence[StimEvents], cfg: DetectionConfig):
-    """Per-channel windows, plus recovery measurements for the record."""
+    """Per-channel windows, plus recovery measurements for the record.
+
+    Recovery is measured over all of an output's pulses, or, if the output mixes stimulus
+    conditions and ``recovery_per_condition`` is set, over each condition's pulses separately
+    (pulses without a known condition form their own group, under the output's key)."""
     ids = [str(c) for c in recording.channel_ids]
     n = recording.get_num_samples()
     if not stim:
         return None, {}
     per_channel: dict[str, list[np.ndarray]] = {c: [] for c in ids}
     recoveries: dict[str, dict[str, float]] = {}
+    row = {c: k for k, c in enumerate(ids)}
     for s in stim:
-        rec: Recovery = measure_recovery(
-            recording, s, pre_ms=cfg.blank_pre_ms, min_post_ms=cfg.recovery_min_post_ms,
-            max_post_ms=cfg.recovery_max_post_ms, threshold_sigma=cfg.recovery_threshold_sigma,
-            band_hz=cfg.band_hz, filter_order=cfg.filter_order,
-        )  # fmt: skip
-        recoveries[s.source] = dict(zip(rec.channel_ids, rec.recovery_ms.tolist()))
-        windows = pulse_windows(recording, s, cfg.blank_pre_ms, rec.post_ms())
-        if s.pulse_sites is not None:
-            # The stimulated electrode recovers slowest from its own pulse: blank it for the maximum.
-            longest = pulse_windows(recording, s, cfg.blank_pre_ms, cfg.recovery_max_post_ms)
-            row = {c: k for k, c in enumerate(ids)}
-            for p, site in enumerate(s.pulse_sites):
-                if site in row:
-                    windows[row[site], p, 1] = max(windows[row[site], p, 1], longest[p, 1])
-        for k, c in enumerate(ids):
-            per_channel[c].append(windows[k])
+        conditions = s.conditions
+        groups = [""]
+        if cfg.recovery_per_condition and mixed_conditions(s):
+            groups = list(dict.fromkeys(conditions.tolist()))
+        for condition in groups:
+            part = s.select(conditions == condition) if len(groups) > 1 else s
+            rec: Recovery = measure_recovery(
+                recording, part, pre_ms=cfg.blank_pre_ms, min_post_ms=cfg.recovery_min_post_ms,
+                max_post_ms=cfg.recovery_max_post_ms, threshold_sigma=cfg.recovery_threshold_sigma,
+                band_hz=cfg.band_hz, filter_order=cfg.filter_order,
+            )  # fmt: skip
+            recoveries[recovery_key(s.source, condition)] = dict(zip(rec.channel_ids, rec.recovery_ms.tolist()))
+            windows = pulse_windows(recording, part, cfg.blank_pre_ms, rec.post_ms())
+            if part.pulse_sites is not None:
+                # The stimulated electrode recovers slowest from its own pulse: blank it for the maximum.
+                longest = pulse_windows(recording, part, cfg.blank_pre_ms, cfg.recovery_max_post_ms)
+                for p, site in enumerate(part.pulse_sites):
+                    if site in row:
+                        windows[row[site], p, 1] = max(windows[row[site], p, 1], longest[p, 1])
+            for k, c in enumerate(ids):
+                per_channel[c].append(windows[k])
     return {c: merge_windows(np.concatenate(w), n) for c, w in per_channel.items()}, recoveries
 
 

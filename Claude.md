@@ -43,8 +43,9 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **Phase 5, part 1** (2026-11-16):
   - **`glm`** (D29 Proposed): Poisson GLM via NeMoS (6 raised cosines over 25 ms, causal network-rate covariate, ridge λ = 1, LBFGS then ≤ 3 Newton steps, Wald test + BH). Signed. Runs in `meagraph graph` by default. The network covariate **must be causal**: a centred one made independent units look inhibitory. Slow: minutes per graph (NeMoS fit per target).
   - **`stim_evoked`** (D30 Proposed): site → electrode edges from pulses with known sites (`meagraph.connectivity.stim`, `pipeline.stim_graph_from_detection`). Pulse-level Poisson-binomial test against each pulse's own baseline; latency floor = detection's blanking (9–12 ms on 2026-11-12, so no ≤ 5 ms "direct" edge is observable). Writes `graph_stim_evoked/all/` + `stim_pairs.csv`; `meagraph plot --method stim_evoked` shows pulse-triggered PSTHs. `stim_connectivity.py` deleted.
+- **Stimulus conditions** (2026-11-16, D31 Proposed): the log's `amplitude`, `unit`, `phase_us`, `waveform` are carried per pulse (`StimEvents.conditions`, e.g. `1000mV/500us/bi500`; `stimulation.csv` columns). Recordings with one condition are processed exactly as before. Mixed ones (amplitude sweeps, several waveforms): detection measures recovery per condition (`channels.csv` keys `STG 1 @ <condition>`, `DetectionResult.recovery_for`); `evoked` classes are `site @ condition`, site pairs only within a condition, plus a `conditions` decoding task; `stim_evoked` writes `graph_stim_evoked/<condition>/` (`meagraph plot --condition`). Detection folders made before this have no condition columns: re-run `meagraph detect` on mixed recordings.
 - **Next in Phase 5:** run `glm` in the benchmark grid; transfer entropy if practical.
-- Decisions D1–D17 and D21 are Accepted (D11 superseded by D21). D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults), D20 (self-contained result folders), D22 (TSPE, CFP, inhibition), D28 (evoked responses), D29 (GLM) and D30 (stimulus-evoked connectivity) are Proposed.
+- Decisions D1–D17 and D21 are Accepted (D11 superseded by D21). D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults), D20 (self-contained result folders), D22 (TSPE, CFP, inhibition), D28 (evoked responses), D29 (GLM), D30 (stimulus-evoked connectivity) and D31 (stimulus conditions) are Proposed.
 - **Legacy scripts retired** 2026-10-05 (see Existing code below).
 
 ## Hardware and data
@@ -100,7 +101,9 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 
 ## Environment
 
+- **Folder layout (since 2026-11-16):** this repo is `ECE_398/graph/`; the stimulation script repo is next to it in `ECE_398/mea-stim-protocols/`. Old `provenance.json` files hold pre-move absolute paths; the code resolves them relative to `results/`.
 - Python 3.13.13 in a uv-managed `.venv`. The venv has no pip; use `uv pip install --python .venv/bin/python ...`.
+- **The venv holds absolute paths** (script shebangs, the editable install). After moving the repo, rebuild it from the lock: `uv sync --frozen --all-extras --python /opt/homebrew/opt/python@3.13/bin/python3.13`.
 - **Installed in `.venv`:** spikeinterface 0.105.0, probeinterface 0.4.0, neo 0.14.5, elephant 1.2.1, numpy 2.5.3, pydantic 2.13, pytest 9.1, nemos 0.2.9 (the `glm` extra; pulls in JAX), plus `meagraph` itself in editable mode.
 - To reinstall the package: `uv pip install --python .venv/bin/python -e ".[dev]"`.
 - **Tests:** `.venv/bin/python -m pytest`. Real-file tests are marked `data` and look for recordings in `data/` or in `$MEAGRAPH_DATA_DIR`.
@@ -148,6 +151,7 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q23.** Recordings with only Filter (3): keep saving raw (recommended), or adopt the D27 phase correction (needs the online filter settings fixed, since they are not stored in the file)?
 - **Q24.** Accept D28 (equalized blanking windows, 2 ms pre-pulse drop, burst onsets from 0 ms, 5 s active/silent threshold, 12–150 ms window)? Should the pre-pulse drop move into detection (D26/Q22)?
 - **Q25.** Accept D29 (GLM: basis, causal network covariate, ridge λ = 1, Wald test) and D30 (stim_evoked: 30 ms window, pulse-level test, `evoked` as the default edge rule)?
+- **Q26.** Accept D31 (exact condition labels, recovery per condition but pooled over sites, site pairs within a condition only)?
 - **Q18.** Accept D19? It would make the burst-removed analysis primary, set `drop_symmetric=False`, and make `cch_jitter` the primary method.
 
 Resolved 2026-10-03:

@@ -154,10 +154,23 @@ def save_burst_controlled(bc: BurstControlled, folder: str | Path, config: Graph
 
 
 # -- stimulus-evoked connectivity (D30) ------------------------------------------------------ #
+def stim_conditions(detection: DetectionResult) -> list[str]:
+    """The stimulus conditions of a recording's pulses with known sites, if there is more than one
+    (each gets its own stim_evoked graph); [] otherwise (one graph of all pulses, as before)."""
+    from meagraph.evoked import pulse_events
+    from meagraph.io.mcs_events import mixed_conditions
+
+    pulses = [s for s in pulse_events(detection.stim) if s.sites is not None and s.n]
+    if not mixed_conditions(pulses):
+        return []
+    return [c for c in dict.fromkeys(np.concatenate([s.conditions for s in pulses]).tolist()) if c]
+
+
 def stim_graph_from_detection(
     detection: DetectionResult,
     config: StimConnectivityConfig | None = None,
     channels: Literal["active", "all"] = "active",
+    condition: str | None = None,
 ) -> ConnectivityResult:
     """Site -> electrode evoked connectivity (:mod:`meagraph.connectivity.stim`) from a detection
     result with per-pulse sites (a stimulation log, or ``--stim-site``).
@@ -165,7 +178,9 @@ def stim_graph_from_detection(
     Readouts are the active (or all usable) channels; stimulated sites are added as nodes so their
     edges have a position. All spikes are used (stimulation periods are the point here), except
     those ``drop_pre_ms`` before a pulse (D26/D28). Latency floors come from detection's own
-    blanking after each site's pulses.
+    blanking after each site's pulses. With ``condition`` (see :func:`stim_conditions`), only
+    pulses of that stimulus condition are analysed; every pulse still keeps baselines clear. The
+    condition is recorded in ``result.params["condition"]``.
     """
     from meagraph.connectivity.stim import StimConnectivityConfig as _Cfg
     from meagraph.connectivity.stim import stim_connectivity
@@ -177,24 +192,38 @@ def stim_graph_from_detection(
     pulses = [s for s in pulse_events(detection.stim) if s.sites is not None and s.n]
     if not pulses:
         raise ValueError("no stimulation pulses with known sites; give a stimulation log or --stim-site")
+    every = np.concatenate([s.onsets_s for s in pulses])  # every analysable pulse, of any condition
+    if condition is not None:
+        pulses = [s.select(s.conditions == condition) for s in pulses]
+        pulses = [s for s in pulses if s.n]
+        if not pulses:
+            raise ValueError(f"no pulses with known sites at condition {condition!r}")
     onsets = np.concatenate([s.onsets_s for s in pulses])
     sites = np.concatenate([s.sites for s in pulses]).astype(object)
     known = [u for u in detection.trains.unit_ids if u in set(sites.tolist())]
     nodes = readouts + [u for u in known if u not in readouts]
     trains = detection.trains.select(nodes)
     if cfg.drop_pre_ms > 0:
-        trains = trains.without_periods(np.column_stack([onsets - cfg.drop_pre_ms / 1e3, onsets - 1e-9]))
-    floor_sites, floor = blanked_until_by_site_ms(detection, nodes)
+        trains = trains.without_periods(np.column_stack([every - cfg.drop_pre_ms / 1e3, every - 1e-9]))
+    floor_sites, floor = blanked_until_by_site_ms(detection, nodes, condition=condition)
     order = list(dict.fromkeys(sites.tolist()))
     rows = [floor[floor_sites.index(s)] if s in floor_sites else np.full(len(nodes), np.nan) for s in order]
-    return stim_connectivity(trains, onsets, sites, np.array(rows), readouts=readouts, config=cfg)
+    res = stim_connectivity(trains, onsets, sites, np.array(rows), readouts=readouts, config=cfg, clear_onsets_s=every)
+    return replace(res, params={**res.params, "condition": condition or ""})
+
+
+def condition_folder_name(condition: str) -> str:
+    """Folder name for a condition's stim_evoked graph: "1000mV/500us/bi500" -> "1000mV_500us_bi500"."""
+    return "".join(ch if ch.isalnum() or ch in ".-" else "_" for ch in condition) or "all"
 
 
 def save_stim_graph(result: ConnectivityResult, folder: str | Path, channels: str = "active", inputs=(), overwrite: bool = False) -> Path:
     """``folder/all/`` (a standard result folder, so ``meagraph plot`` can draw it) plus
     ``folder/all/stim_pairs.csv``: every tested site-electrode pair with its latency floor,
-    jitter, censoring and each edge rule's verdict."""
-    out = save_result(result, Path(folder) / "all", inputs=inputs, overwrite=overwrite,
+    jitter, censoring and each edge rule's verdict. A graph of one stimulus condition goes to
+    ``folder/<condition>/`` instead (:func:`condition_folder_name`)."""
+    name = condition_folder_name(result.params.get("condition", ""))
+    out = save_result(result, Path(folder) / name, inputs=inputs, overwrite=overwrite,
                       pipeline=GraphConfig(channels=channels, exclude_stim_post_ms=0.0))  # fmt: skip
     x = result.extra
     with open(out / "stim_pairs.csv", "w", newline="") as f:
@@ -210,9 +239,10 @@ def save_stim_graph(result: ConnectivityResult, folder: str | Path, channels: st
 
 
 def pulse_triggered_psth(detection: DetectionResult, trains: SpikeTrains, bin_ms: float = 1.0,
-                         range_ms: tuple[float, float] = (-30.0, 60.0)) -> tuple[np.ndarray, np.ndarray]:  # fmt: skip
+                         range_ms: tuple[float, float] = (-30.0, 60.0), condition: str = "") -> tuple[np.ndarray, np.ndarray]:  # fmt: skip
     """``(psth, edges_ms)``: ``psth[i, j]`` counts spikes of unit ``j`` at each time after the pulses
-    of site ``i`` (summed over pulses; zero rows for units that were never stimulated)."""
+    of site ``i`` (summed over pulses; zero rows for units that were never stimulated). With
+    ``condition``, only pulses of that stimulus condition."""
     from meagraph.evoked import pulse_events
 
     edges = np.arange(range_ms[0], range_ms[1] + bin_ms / 2, bin_ms)
@@ -220,6 +250,8 @@ def pulse_triggered_psth(detection: DetectionResult, trains: SpikeTrains, bin_ms
     pulses = [s for s in pulse_events(detection.stim) if s.sites is not None and s.n]
     if not pulses:
         return out, edges
+    if condition:
+        pulses = [s.select(s.conditions == condition) for s in pulses]
     onsets = np.concatenate([s.onsets_s for s in pulses])
     sites = np.concatenate([s.sites for s in pulses])
     for i, u in enumerate(trains.unit_ids):

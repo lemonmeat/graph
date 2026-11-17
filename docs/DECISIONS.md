@@ -710,3 +710,23 @@ The network covariate is what makes the GLM usable with bursts (precision 0.34 �
 **What it can claim.** A site → electrode edge says that stimulating the site changes the electrode's firing 10–30 ms later. With 1000 mV pulses most of these responses are carried by evoked network bursts (D28), so they are polysynaptic and largely shared across burst-evoking sites, not monosynaptic connections. There is no burst control (stimulation periods are the point); `meagraph evoked` gives the burst-level view.
 
 **First results (2026-11-12, `meagraph graph --method stim_evoked`, 4 s each):** `21-28-58` (5 pulses per site): 83 pairs tested, 52 evoked edges, 0 direct. `21-55-43` (15 per site): 84 pairs, 53 evoked, 0 direct. Strongest edges are from the burst sites (36, 46, 58, 68) to 46, 76, 62 and 67 at 12–20 ms, responding on 93–100 % of pulses against 3–4 % baseline. 36 ↔ 46 is partly hardware crosstalk (zero-lag coupling between 36 and 46 in every November E-00278 recording).
+
+## D31. Stimulus conditions from the stimulation log (amplitude, phase, waveform)
+
+**Status:** Proposed 2026-11-16 (implemented; the owner asked that recordings with one condition stay as easy to process as before).
+
+**Problem.** The stimulation log records each pulse's `amplitude`, `unit`, `phase_us` and `waveform`, and `mea-stim-protocols` can interleave several amplitudes (`AmplitudeSweepMv`) and waveforms in one session. meagraph read only the site. In a mixed session that would (1) blank every pulse with one recovery time measured over all conditions together, too short for large pulses (artifact read as spikes) and too long for small ones (early responses lost); (2) pool a site's responses across conditions in `meagraph evoked` and `stim_evoked`.
+
+**What was added.**
+
+1. `StimEvents` carries `pulse_amplitudes`, `amplitude_unit`, `pulse_phase_us` and `pulse_waveforms` from the log (`align_stimlog`), saved in four new `stimulation.csv` columns. `StimEvents.conditions` labels each pulse, e.g. `1000mV/500us/bi500`; `mixed_conditions()` is true when there is more than one label.
+2. **Nothing changes unless conditions are mixed.** A recording whose pulses share one condition, and every recording without a log, gives the same detection, `evoked` and `stim_evoked` output as before (tested). Detection folders written earlier load as before (no condition columns, so no conditions).
+3. **Detection** (`recovery_per_condition`, default on): for an output that mixes conditions, recovery is measured on each condition's pulses alone and each pulse is blanked by its own condition's recovery. Keys in `channels.csv` are `STG 1 @ <condition>`; `DetectionResult.recovery_for(source, condition)` looks them up. Pulses without logged parameters form their own group under the plain `STG 1` key. A condition with fewer than 3 isolated pulses cannot be measured and is blanked for the maximum (50 ms). `meagraph audit` prints recovery per condition next to the pooled value.
+4. **`meagraph evoked`:** a pulse's class is `site @ condition`. Blanking is still equalized over every site and condition (D28), now using each condition's recovery and pulse duration. Site-pair decoding pairs sites **within** a condition only: whether two inputs are distinguishable is asked at a fixed setting, and all pairs over 8 sites × 4 amplitudes (496) would take ~35 min against ~8 min for within-condition pairs. A new task, `conditions`, decodes the condition from all readouts (all sites pooled). `trials.csv` has a `condition` column.
+5. **`stim_evoked`:** one graph per condition in `graph_stim_evoked/<condition>/` (`1000mV_500us_bi500/`); floors from that condition's recovery; baseline windows still stay clear of every pulse, of any condition. `result.params["condition"]` records it, `meagraph plot --condition` chooses it, and the PSTHs use only that condition's pulses.
+
+**Choices, for review:**
+
+1. A condition is the exact (amplitude, phase, waveform) triple; nothing is binned. Amplitudes that differ by rounding would form separate conditions.
+2. Recovery is per condition, but still pooled over sites: an electrode next to one site may carry artifact longer after that site's pulses than the pooled value. Per-site recovery would close this, at the cost of fewer pulses per measurement.
+3. Pairs within conditions only, and condition decoding over all sites pooled (not per site).

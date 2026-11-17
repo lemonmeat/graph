@@ -9,11 +9,15 @@ recorded ``Single Pulse Start`` event. The PC clock in the log only checks the m
 intervals between pulses must agree with the recorded ones (they are random, so they form a
 fingerprint). If the counts differ, pulses are matched one by one by their intervals instead,
 and the unmatched ones are reported.
+
+The optional ``amplitude``, ``unit``, ``phase_us`` and ``waveform`` columns are attached to the
+matched pulses as their stimulus condition (DECISIONS.md D31).
 """
 
 from __future__ import annotations
 
 import csv
+import math
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -178,10 +182,16 @@ def align_stimlog(stim: Sequence[StimEvents], log: StimLog, tolerance_s: float =
         rows = log.for_output(s.source)
         match, method, residual = _match(s.onsets_s, log.time_s[rows], tolerance_s)
         sites = [""] * s.n
+        amps, phases, waves = [float("nan")] * s.n, [float("nan")] * s.n, [""] * s.n
         for r, k in enumerate(match):
             if k >= 0:
+                row = log.rows[rows[r]]
                 sites[k] = log.label[rows[r]]
-        out.append(s.with_pulse_sites(sites))
+                amps[k], phases[k], waves[k] = _float(row.get("amplitude")), _float(row.get("phase_us")), (row.get("waveform") or "").strip()
+        events = s.with_pulse_sites(sites)
+        if not all(math.isnan(v) for v in amps + phases) or any(waves):
+            events = events.with_pulse_params(amps, _unit(log, rows), phases, waves)
+        out.append(events)
         matched = {int(k) for k in match if k >= 0}
         reports.append(Alignment(
             source=s.source, n_logged=int(rows.size), n_recorded=s.n, n_matched=len(matched), method=method,
@@ -189,6 +199,22 @@ def align_stimlog(stim: Sequence[StimEvents], log: StimLog, tolerance_s: float =
             unmatched_recorded=tuple(k for k in range(s.n) if k not in matched),
         ))  # fmt: skip
     return out, reports
+
+
+def _float(value) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def _unit(log: StimLog, rows: np.ndarray) -> str:
+    """The amplitude unit of one output's rows. One output cannot mix voltage and current mode
+    within a session, so several units mean a broken log."""
+    units = {(log.rows[r].get("unit") or "").strip() for r in rows} - {""}
+    if len(units) > 1:
+        raise ValueError(f"{log.path.name}: several amplitude units on one output: {sorted(units)}")
+    return units.pop() if units else ""
 
 
 def _match(recorded: np.ndarray, logged: np.ndarray, tol: float) -> tuple[np.ndarray, str, float]:

@@ -14,6 +14,11 @@ Three questions, asked of every site in a recording with per-pulse sites (a stim
    training, decodable sites are candidate inputs and the electrodes that separate them are
    candidate readouts.
 
+Stimulus conditions: when the stimulation log gives the pulses more than one condition (amplitude,
+first-phase duration, waveform; e.g. an amplitude sweep), each class is a site *at* a condition,
+"36 @ 500mV/500us/bi500", and a further task decodes the condition itself. Recordings with one
+condition are analysed by site alone, exactly as before.
+
 Blanking: detection removes each electrode's spikes until its artifact has recovered, and a
 stimulated electrode's spikes for ``recovery_max_post_ms`` after its own pulses (D25). If that
 gap differed between conditions, the decoder could identify a site from the blanking alone. So
@@ -41,7 +46,7 @@ from meagraph.config import write_run_folder
 from meagraph.detect.bursts import BurstConfig, network_bursts
 from meagraph.detect.threshold import DetectionResult
 from meagraph.intervals import inside, merge_intervals
-from meagraph.io.mcs_events import StimEvents
+from meagraph.io.mcs_events import StimEvents, mixed_conditions
 from meagraph.spiketrains import SpikeTrains
 
 STATES = ("silent", "active", "in_burst")
@@ -98,8 +103,9 @@ class Trials:
     """Pulses and sham times, with what followed each."""
 
     onset_s: np.ndarray
-    label: np.ndarray  # stimulated site, or "sham"
+    label: np.ndarray  # stimulated site ("36 @ 1000mV/500us/bi500" if conditions are mixed), or "sham"
     source: np.ndarray  # STG output, "" for shams
+    condition: np.ndarray  # stimulus condition (see StimEvents.conditions), "" if unknown and for shams
     state: np.ndarray  # one of STATES
     since_burst_s: np.ndarray  # time since the last burst ended (inf if none yet; 0 inside a burst)
     burst_latency_ms: np.ndarray  # onset of a burst starting in the window, NaN if none
@@ -123,7 +129,7 @@ class EvokedResult:
     config: EvokedConfig
     channels: tuple[str, ...]
     start_ms: np.ndarray  # per channel: where its response window starts (after blanking)
-    sites: tuple[str, ...]  # stimulated sites, in order of first use
+    sites: tuple[str, ...]  # pulse classes, in order of first use: sites, or "site @ condition" (mixed conditions)
     pulses: Trials
     shams: Trials  # the full sham grid
     bursts: np.ndarray  # (k, 2) network bursts, s
@@ -153,7 +159,7 @@ def _states(times: np.ndarray, bursts: np.ndarray, active_gap_s: float) -> tuple
     return state.astype(object), since
 
 
-def _trials(times, labels, sources, trains: SpikeTrains, start_ms, bursts, cfg: EvokedConfig) -> Trials:
+def _trials(times, labels, sources, conditions, trains: SpikeTrains, start_ms, bursts, cfg: EvokedConfig) -> Trials:
     times = np.asarray(times, dtype=np.float64)
     edges = np.asarray(cfg.bins_ms) / 1e3
     lo, hi = edges[0], edges[-1]
@@ -175,7 +181,8 @@ def _trials(times, labels, sources, trains: SpikeTrains, start_ms, bursts, cfg: 
         ok = j < b0.size
         ok[ok] &= b0[j[ok]] <= times[ok] + hi
         latency[ok] = (b0[j[ok]] - times[ok]) * 1e3
-    return Trials(times, np.asarray(labels, dtype=object), np.asarray(sources, dtype=object), state, since, latency, counts, first)
+    return Trials(times, np.asarray(labels, dtype=object), np.asarray(sources, dtype=object),
+                  np.asarray(conditions, dtype=object), state, since, latency, counts, first)  # fmt: skip
 
 
 def sham_times(onsets: np.ndarray, t_start_s: float, t_stop_s: float, cfg: EvokedConfig) -> np.ndarray:
@@ -386,27 +393,32 @@ def evoked_responses(
     """Evoked responses of ``trains`` (the readout electrodes) to every pulse in ``pulses``.
 
     A pulse's class is its site; pulses of an output with no known site are classed by the output
-    ("STG 1"). ``start_ms`` is where each electrode's window starts (after blanking); by default
-    the first bin edge. ``bursts`` are network bursts on the whole array.
+    ("STG 1"). If the pulses have more than one stimulus condition, the class is "site @ condition".
+    ``start_ms`` is where each electrode's window starts (after blanking); by default the first bin
+    edge. ``bursts`` are network bursts on the whole array.
     """
     cfg = config or EvokedConfig()
     start = np.full(trains.n_units, cfg.window_ms[0]) if start_ms is None else np.maximum(np.asarray(start_ms, float), cfg.window_ms[0])
-    times, labels, sources = [], [], []
+    mixed = mixed_conditions(pulses)
+    times, electrodes, sources, conditions = [], [], [], []
     for s in pulses:
         sites = s.sites if s.sites is not None else np.full(s.n, "", dtype=object)
         times.append(s.onsets_s)
-        labels += [site or s.source for site in sites]
+        electrodes += [site or s.source for site in sites]
         sources += [s.source] * s.n
+        conditions += s.conditions.tolist()
     times = np.concatenate(times) if times else np.zeros(0)
     order = np.argsort(times, kind="stable")
-    times, labels, sources = times[order], np.array(labels, dtype=object)[order], np.array(sources, dtype=object)[order]
+    times = times[order]
+    electrodes, sources, conditions = (np.array(v, dtype=object)[order] for v in (electrodes, sources, conditions))
     keep = (times + cfg.window_ms[1] / 1e3 <= trains.t_stop_s) & (times >= trains.t_start_s)
-    times, labels, sources = times[keep], labels[keep], sources[keep]
+    times, electrodes, sources, conditions = times[keep], electrodes[keep], sources[keep], conditions[keep]
+    labels = np.array([f"{e} @ {c or 'unknown'}" for e, c in zip(electrodes, conditions)] if mixed else electrodes.tolist(), dtype=object)
     bursts = np.asarray(bursts, dtype=float).reshape(-1, 2)
 
-    pulse_trials = _trials(times, labels, sources, trains, start, bursts, cfg)
+    pulse_trials = _trials(times, labels, sources, conditions, trains, start, bursts, cfg)
     grid = sham_times(times, trains.t_start_s, trains.t_stop_s, cfg)
-    sham_trials = _trials(grid, ["sham"] * grid.size, [""] * grid.size, trains, start, bursts, cfg)
+    sham_trials = _trials(grid, ["sham"] * grid.size, [""] * grid.size, [""] * grid.size, trains, start, bursts, cfg)
 
     sites = tuple(dict.fromkeys(labels.tolist()))
     channels = trains.unit_ids
@@ -425,17 +437,22 @@ def evoked_responses(
         decoding["sites_and_sham"] = decode(feats, labs, cfg, rng)
     # Readouts that were never stimulated: a stimulated electrode often fires after its own pulses
     # without a network burst, which identifies that site but needs the input electrode as a readout.
-    offsite = np.array([c not in set(sites) for c in channels])
+    offsite = np.array([c not in set(electrodes.tolist()) for c in channels])
     if offsite.any() and not offsite.all():
         d = decode(pulse_trials.counts[use][:, offsite], pulse_trials.label[use], cfg, rng)
         decoding["sites_unstimulated_readouts"] = {**d, "readouts": [c for c, k in zip(channels, offsite) if k]}
     # Which pairs of sites can be told apart (on unstimulated readouts where there are any): for a
-    # set of distinguishable inputs, every pair in it should decode above chance.
+    # set of distinguishable inputs, every pair in it should decode above chance. With mixed
+    # conditions, only sites at the same condition are paired (the "conditions" task below asks
+    # whether conditions differ), which also keeps the number of pairs, and the runtime, in check.
     feats = pulse_trials.counts[:, offsite] if offsite.any() and not offsite.all() else pulse_trials.counts
     pair_cfg = cfg.model_copy(update={"n_permutations": cfg.n_pair_permutations})
+    condition_of = {lab: c for lab, c in zip(pulse_trials.label.tolist(), pulse_trials.condition.tolist())}
     pairs = []
     for i, a in enumerate(decodable):
         for b in decodable[i + 1 :]:
+            if mixed and condition_of[a] != condition_of[b]:
+                continue
             m = np.isin(pulse_trials.label, [a, b])
             d = decode(feats[m], pulse_trials.label[m], pair_cfg, rng)
             pairs.append({"a": a, "b": b, "balanced_accuracy": d.get("balanced_accuracy", float("nan")),
@@ -444,6 +461,11 @@ def evoked_responses(
     for r, v in zip(pairs, q):
         r["q_value"] = float(v)
     decoding["site_pairs"] = pairs
+    if mixed:
+        # Can the culture's response tell the conditions apart, whatever the site? (all readouts)
+        n_cond = {c: int((conditions == c).sum()) for c in set(conditions.tolist()) if c}
+        cond_use = np.isin(conditions, [c for c, k in n_cond.items() if k >= cfg.min_trials])
+        decoding["conditions"] = decode(pulse_trials.counts[cond_use], conditions[cond_use], cfg, rng)
 
     edges = np.arange(cfg.psth_ms[0], cfg.psth_ms[1] + cfg.psth_bin_ms / 2, cfg.psth_bin_ms)
     psth = {"edges_ms": edges}
@@ -464,44 +486,63 @@ def evoked_responses(
     )  # fmt: skip
 
 
-def blanked_until_ms(detection: DetectionResult, channels: Sequence[str]) -> np.ndarray:
-    """Per channel, the latest time after pulse onset (ms) at which detection may still have
-    removed its spikes, over every output and site: pulse duration + artifact recovery (or the
-    maximum, for unrecovered channels and for stimulated electrodes) + guard."""
+def _pulse_groups(detection: DetectionResult):
+    """(pulses, condition) groups as detection blanked them: an output's pulses per stimulus
+    condition if it mixed conditions, else all of them with condition ""."""
+    for s in pulse_events(detection.stim):
+        if not s.n:
+            continue
+        conditions = s.conditions
+        if mixed_conditions(s):
+            for condition in dict.fromkeys(conditions.tolist()):
+                yield s.select(conditions == condition), condition
+        else:
+            yield s, ""
+
+
+def _floor_ms(detection: DetectionResult, part: StimEvents, condition: str, channels: Sequence[str], sites: set) -> np.ndarray:
+    """Latest blanking end after onset (ms) per channel over the pulses ``part``: pulse duration +
+    recovery (the maximum for unrecovered channels and for ``sites``) + guard."""
     cfg = detection.config
-    pulses = pulse_events(detection.stim)
+    dur_ms = float(np.max(part.durations_s)) * 1e3 if part.durations_s is not None and part.n else 0.0
+    recovery = detection.recovery_for(part.source, condition)
     out = np.zeros(len(channels))
-    for s in pulses:
-        dur_ms = float(np.max(s.durations_s)) * 1e3 if s.durations_s is not None and s.n else 0.0
-        recovery = detection.recovery_ms.get(s.source, {})
-        sites = set(s.sites.tolist()) if s.sites is not None else set()
-        for c, ch in enumerate(channels):
-            r = recovery.get(ch, float("nan"))
-            post = cfg.recovery_max_post_ms if (ch in sites or not np.isfinite(r)) else max(r, cfg.recovery_min_post_ms)
-            out[c] = max(out[c], dur_ms + post + cfg.guard_ms)
+    for c, ch in enumerate(channels):
+        r = recovery.get(ch, float("nan"))
+        post = cfg.recovery_max_post_ms if (ch in sites or not np.isfinite(r)) else max(r, cfg.recovery_min_post_ms)
+        out[c] = dur_ms + post + cfg.guard_ms
     return out
 
 
-def blanked_until_by_site_ms(detection: DetectionResult, channels: Sequence[str]) -> tuple[list[str], np.ndarray]:
+def blanked_until_ms(detection: DetectionResult, channels: Sequence[str]) -> np.ndarray:
+    """Per channel, the latest time after pulse onset (ms) at which detection may still have
+    removed its spikes, over every output, site and stimulus condition: pulse duration + artifact
+    recovery (or the maximum, for unrecovered channels and for stimulated electrodes) + guard."""
+    out = np.zeros(len(channels))
+    for part, condition in _pulse_groups(detection):
+        sites = set(part.sites.tolist()) if part.sites is not None else set()
+        out = np.maximum(out, _floor_ms(detection, part, condition, channels, sites))
+    return out
+
+
+def blanked_until_by_site_ms(detection: DetectionResult, channels: Sequence[str], condition: str | None = None) -> tuple[list[str], np.ndarray]:
     """Like :func:`blanked_until_ms`, but per stimulated site: ``(sites, floor)`` with
     ``floor[k, c]`` the latest blanking end on channel ``c`` after the pulses of ``sites[k]``
-    (sites in order of first use; pulses without a known site are left out)."""
-    cfg = detection.config
+    (sites in order of first use; pulses without a known site are left out). With ``condition``,
+    only pulses of that stimulus condition count."""
     floors: dict[str, np.ndarray] = {}
-    for s in pulse_events(detection.stim):
-        if s.sites is None or not s.n:
+    for part, cond in _pulse_groups(detection):
+        if part.sites is None:
             continue
-        recovery = detection.recovery_ms.get(s.source, {})
-        dur = s.durations_s if s.durations_s is not None else np.zeros(s.n)
-        for site in dict.fromkeys(s.sites.tolist()):
+        own = part.conditions
+        for site in dict.fromkeys(part.sites.tolist()):
             if not site:
                 continue
-            dur_ms = float(np.max(dur[s.sites == site])) * 1e3
-            row = floors.setdefault(site, np.zeros(len(channels)))
-            for c, ch in enumerate(channels):
-                r = recovery.get(ch, float("nan"))
-                post = cfg.recovery_max_post_ms if (ch == site or not np.isfinite(r)) else max(r, cfg.recovery_min_post_ms)
-                row[c] = max(row[c], dur_ms + post + cfg.guard_ms)
+            mine = (part.sites == site) & ((own == condition) if condition is not None else True)
+            if not mine.any():
+                continue
+            f = _floor_ms(detection, part.select(mine), cond, channels, {site})
+            floors[site] = np.maximum(floors.get(site, np.zeros(len(channels))), f)
     sites = list(floors)
     return sites, np.array([floors[s] for s in sites]).reshape(len(sites), len(channels))
 
@@ -550,7 +591,7 @@ def save_evoked(result: EvokedResult, folder: str | Path, inputs=(), overwrite: 
     p = result.pulses
     total = p.counts.sum(axis=2)
     _write_csv(out / "trials.csv", [
-        {"onset_s": float(p.onset_s[i]), "site": p.label[i], "source": p.source[i], "state": p.state[i],
+        {"onset_s": float(p.onset_s[i]), "site": p.label[i], "source": p.source[i], "condition": p.condition[i], "state": p.state[i],
          "since_burst_s": float(p.since_burst_s[i]), "burst_latency_ms": float(p.burst_latency_ms[i]),
          **{f"spikes_{ch}": int(total[i, c]) for c, ch in enumerate(result.channels)}}
         for i in range(len(p.onset_s))

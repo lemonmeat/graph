@@ -3,9 +3,11 @@
 A result folder holds:
 - ``spikes.npz``: flat arrays ``unit_id``, ``time_s``, ``amplitude_uv``, ``waveform_uv`` (n, samples)
 - ``channels.csv``: one row per channel (position, spike count, rate, noise, QC, exclusion, recovery)
-- ``stimulation.csv``: one row per pulse (STG output, kind, onset, offset, site); header only
-  for spontaneous recordings. ``site`` is the stimulated electrode of that pulse, if known: one
-  site for a whole output (``--stim-site``) or one per pulse (a stimulation log)
+- ``stimulation.csv``: one row per pulse (STG output, kind, onset, offset, site, amplitude, unit,
+  phase_us, waveform); header only for spontaneous recordings. ``site`` is the stimulated
+  electrode of that pulse, if known: one site for a whole output (``--stim-site``) or one per
+  pulse (a stimulation log). The last four columns are the pulse's stimulus parameters as logged,
+  empty without a log (folders written before 2026-11-16 do not have them)
 - ``config.yaml`` and ``provenance.json`` (see :func:`meagraph.config.write_run_folder`); the
   provenance names the MCS analog stream detection ran on (``analog_stream``)
 """
@@ -26,7 +28,7 @@ from meagraph.spiketrains import SpikeTrains
 
 _COLUMNS = ["channel_id", "x_um", "y_um", "z_um", "n_spikes", "rate_hz", "noise_uv", "qc_negative", "qc_positive",
             "qc_p_value", "active", "excluded", "recovery_ms"]  # fmt: skip
-_STIM_COLUMNS = ["source", "kind", "onset_s", "offset_s", "site"]
+_STIM_COLUMNS = ["source", "kind", "onset_s", "offset_s", "site", "amplitude", "unit", "phase_us", "waveform"]
 
 
 def default_detection_folder(recording_path: str | Path) -> Path:
@@ -103,8 +105,13 @@ def save_detection(result: DetectionResult, folder: str | Path, inputs: Sequence
         for s in result.stim:
             offsets = s.offsets_s if s.offsets_s is not None else np.full(s.n, np.nan)
             sites = s.sites if s.sites is not None else [""] * s.n
-            for on, off, site in zip(s.onsets_s, offsets, sites):
-                w.writerow([s.source, s.kind, repr(float(on)), "" if np.isnan(off) else repr(float(off)), site])
+            amps = s.pulse_amplitudes or (np.nan,) * s.n
+            phases = s.pulse_phase_us or (np.nan,) * s.n
+            waves = s.pulse_waveforms or ("",) * s.n
+            for on, off, site, a, ph, wave in zip(s.onsets_s, offsets, sites, amps, phases, waves):
+                w.writerow([s.source, s.kind, repr(float(on)), "" if np.isnan(off) else repr(float(off)), site,
+                            "" if np.isnan(a) else f"{a:.10g}", s.amplitude_unit if s.pulse_amplitudes else "",
+                            "" if np.isnan(ph) else f"{ph:.10g}", wave])  # fmt: skip
     return out
 
 
@@ -123,6 +130,11 @@ def _read_stim(path: Path) -> tuple[StimEvents, ...]:
             events = events.with_site(sites[0])  # one site for the whole output
         elif any(sites):
             events = events.with_pulse_sites(sites)  # per pulse, from a stimulation log
+        amps, phases, waves = ([r.get(k) or "" for r in g] for k in ("amplitude", "phase_us", "waveform"))
+        if any(amps) or any(phases) or any(waves):  # stimulus parameters from a stimulation log
+            unit = next((r["unit"] for r in g if r.get("unit")), "")
+            events = events.with_pulse_params([float(a) if a else None for a in amps], unit,
+                                              [float(v) if v else None for v in phases], waves)  # fmt: skip
         out.append(events)
     return tuple(out)
 

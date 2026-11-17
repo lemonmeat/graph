@@ -122,17 +122,21 @@ def stim_connectivity(
     floor_ms: np.ndarray,
     readouts: Sequence[str] | None = None,
     config: StimConnectivityConfig | None = None,
+    clear_onsets_s: np.ndarray | None = None,
 ) -> ConnectivityResult:
     """Site -> electrode evoked connectivity.
 
     ``trains`` holds every node: the readout electrodes and the stimulated sites (sites need not be
     readouts, but they must be units of ``trains`` to have a position). ``onsets_s`` and ``sites``
-    give every pulse and its site. ``floor_ms[k, c]`` is the latency floor for the k-th site in
-    order of first use and unit ``c`` of ``trains``. ``readouts`` (default: every unit) are the
-    tested targets.
+    give every analysed pulse and its site. ``floor_ms[k, c]`` is the latency floor for the k-th
+    site in order of first use and unit ``c`` of ``trains``. ``readouts`` (default: every unit) are
+    the tested targets. ``clear_onsets_s`` (default ``onsets_s``) are every pulse of the recording:
+    baseline windows must start ``clear_ms`` after each of them, analysed or not (e.g. pulses of
+    another stimulus condition).
     """
     cfg = config or StimConnectivityConfig()
     onsets_s = np.asarray(onsets_s, dtype=np.float64)
+    all_onsets = onsets_s if clear_onsets_s is None else np.union1d(np.asarray(clear_onsets_s, dtype=np.float64), onsets_s)
     sites = np.asarray(sites, dtype=object)
     ids = list(trains.unit_ids)
     order = list(dict.fromkeys(sites.tolist()))
@@ -161,7 +165,7 @@ def stim_connectivity(
             length = end_s - f_s
             if length <= 0:
                 continue
-            base = _baseline_starts(on, onsets_s, length, cfg)
+            base = _baseline_starts(on, all_onsets, length, cfg)
             use = np.array([b.size > 0 for b in base])
             if use.sum() < cfg.min_pulses:
                 continue

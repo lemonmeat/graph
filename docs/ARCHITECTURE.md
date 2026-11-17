@@ -109,8 +109,10 @@ Results go to `results/<recording name>/` in the recording's folder, so with the
 results/<recording>/
   detect/                        meagraph detect
     spikes.npz                   spike times, amplitudes, waveforms (flat arrays)
-    channels.csv                 per electrode: position, rate, noise, QC, exclusion, artifact recovery
-    stimulation.csv              per pulse: STG output, onset, offset, site (header only if spontaneous)
+    channels.csv                 per electrode: position, rate, noise, QC, exclusion, artifact recovery (per output,
+                                 or per output and stimulus condition when an output mixes conditions, D31)
+    stimulation.csv              per pulse: STG output, onset, offset, site, amplitude, unit, phase_us, waveform
+                                 (header only if spontaneous; the last four from the stimulation log)
     config.yaml, provenance.json
   graph_<method>/                meagraph graph
     network_bursts.csv           burst periods removed for no_bursts/
@@ -119,7 +121,9 @@ results/<recording>/
   graph_stim_evoked/all/         meagraph graph on a stimulation recording with per-pulse sites (D30): the
                                  same files as above (rows = stimulated sites) plus stim_pairs.csv (per
                                  site-electrode pair: latency floor, latency, jitter, response probability
-                                 vs baseline, each edge rule's verdict); no burst control
+                                 vs baseline, each edge rule's verdict); no burst control. A recording that mixes
+                                 stimulus conditions gets graph_stim_evoked/<condition>/ (e.g. 1000mV_500us_bi500/)
+                                 per condition instead of all/ (D31)
   evoked/                        meagraph evoked (stimulation recordings)
     sites.csv                    per site and state: evoked-burst probability, Wilson CI, sham rate, p
     responses.csv                per site and electrode: spikes vs sham, first-spike latency, p, q

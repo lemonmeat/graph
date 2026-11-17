@@ -249,7 +249,8 @@ MCS files record when each STG output fired, but not which electrode it was rout
 | `api_index` | McsUsbNet electrode index |
 | `label` | MCS electrode label (e.g. `47`), the meagraph channel ID |
 | `amplitude`, `unit` | per-phase amplitude; `uV` in voltage mode, `nA` in current mode |
-| `phase_us` | phase duration of the biphasic pulse |
+| `phase_us` | duration of the waveform's first step (phase), µs |
+| `waveform` | waveform name, e.g. `bi500` (optional; written since `waveforms-h5-1`) |
 | `offset_ms` | start of this pulse after the trial start |
 | `interval_s` | random wait between the previous trial's start and this one's |
 | `pc_time`, `pc_elapsed_s` | PC clock time of the trial, and seconds since the session started |
@@ -261,6 +262,8 @@ MCS files record when each STG output fired, but not which electrode it was rout
 **Marker events.** When the script sets the sideband marker bit, `STG n Marker Start/Stop` events are recorded at the same times as the pulses. meagraph reads them but does not count them as extra pulses.
 
 **Where the sites go.** Each pulse's site is stored in `StimEvents.pulse_sites` and in the `site` column of the detection folder's `stimulation.csv`.
+
+**Stimulus conditions (D31).** `amplitude`, `unit`, `phase_us` and `waveform` (all optional) go to `StimEvents.pulse_amplitudes`, `amplitude_unit`, `pulse_phase_us` and `pulse_waveforms`, and to the same columns of `stimulation.csv`. Together they form each pulse's condition, written as e.g. `1000mV/500us/bi500` (µV shown in mV, nA in µA). A recording whose pulses all share one condition is processed exactly as before. One that mixes conditions (an amplitude sweep, several waveforms) is blanked with a recovery measured per condition, `meagraph evoked` classes pulses as `site @ condition`, and `meagraph graph` writes one `stim_evoked` graph per condition.
 
 ## MCS online spike streams: `SegmentStream`
 

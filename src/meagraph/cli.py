@@ -156,6 +156,10 @@ def _detect(args: argparse.Namespace) -> int:
         )
         if result.excluded:
             print(f"  excluded: {result.excluded}")
+        mixed = [k for k in result.recovery_ms if " @ " in k]
+        if mixed:
+            n_cond = len({k.split(" @ ", 1)[1] for k in mixed})
+            print(f"  {n_cond} stimulus conditions from the stimulation log: artifact recovery measured and blanked per condition")
         if session.stim and all(s.sites is None for s in session.stim):
             print("  note: no --stim-site or stimulation log, so no stimulating electrode was excluded or extra-blanked")
         print(f"  wrote {out}")
@@ -212,9 +216,7 @@ def _graph(args: argparse.Namespace) -> int:
 
 
 def _stim_graph(args: argparse.Namespace, detection, folder: Path) -> None:
-    import numpy as np
-
-    from meagraph.connectivity.pipeline import save_stim_graph, stim_graph_from_detection
+    from meagraph.connectivity.pipeline import save_stim_graph, stim_conditions, stim_graph_from_detection
     from meagraph.connectivity.stim import StimConnectivityConfig
 
     pulses = _pulses(detection.stim)
@@ -227,13 +229,28 @@ def _stim_graph(args: argparse.Namespace, detection, folder: Path) -> None:
         print("  stim_evoked: skipped, the stimulated sites are unknown (no stimulation log; detect again with --stimlog or --stim-site)")
         return
     cfg = StimConnectivityConfig(response_ms=args.stim_response_ms, edge_rule=args.stim_rule)
-    res = stim_graph_from_detection(detection, cfg, channels=args.channels)
-    out = save_stim_graph(res, folder.parent / "graph_stim_evoked", channels=args.channels, inputs=[folder / "spikes.npz"], overwrite=True)
+    conditions = stim_conditions(detection)
+    if conditions:
+        unknown = sum(int((s.conditions == "").sum()) for s in pulses if s.sites is not None)
+        print(f"  stim_evoked: {len(conditions)} stimulus conditions, one graph each"
+              + (f" ({unknown} pulses without logged parameters left out)" if unknown else ""))
+    for condition in conditions or [None]:
+        res = stim_graph_from_detection(detection, cfg, channels=args.channels, condition=condition)
+        out = save_stim_graph(res, folder.parent / "graph_stim_evoked", channels=args.channels, inputs=[folder / "spikes.npz"], overwrite=True)
+        _print_stim_graph(res, pulses, cfg, out, label=f"stim_evoked [{condition}]" if condition else "stim_evoked")
+
+
+def _print_stim_graph(res, pulses, cfg, out: Path, label: str) -> None:
+    import numpy as np
+
     x = res.extra
     sites = [s for s in dict.fromkeys(np.concatenate([s.sites for s in pulses if s.sites is not None]).tolist()) if s]
+    if not res.tested.any():
+        print(f"  {label}: no site-electrode pair could be tested (sites with < {cfg.min_pulses} pulses: {list(x['skipped_sites'])})")
+        return
     tested_sites = sorted({res.node_ids[i] for i in np.nonzero(res.tested)[0]}, key=sites.index)
     floors = x["floor_ms"][res.tested]
-    print(f"  stim_evoked: {len(tested_sites)} of {len(sites)} sites tested, {int(res.tested.sum())} site-electrode pairs; "
+    print(f"  {label}: {len(tested_sites)} of {len(sites)} sites tested, {int(res.tested.sum())} site-electrode pairs; "
           f"response window from the blanking floor (median {np.median(floors):.0f} ms, range {floors.min():.0f}-{floors.max():.0f}) "
           f"to {cfg.response_ms:g} ms")  # fmt: skip
     if x["skipped_sites"]:
@@ -271,18 +288,19 @@ def _evoked(args: argparse.Namespace) -> int:
     if res.n_dropped_pre:
         print(f"  dropped {res.n_dropped_pre} spikes in the {config.drop_pre_ms:g} ms before pulses (pulse-locked artifact, D26)")
     print(f"\n  evoked burst onsets ({config.burst_from_ms:g}-{hi:g} ms), pulses vs shams in the same state:")
-    print(f"    {'site':>6}  {'all':>22}  {'silent':>14}  {'active':>14}  {'in burst':>14}")
+    w = max([6, *(len(s) for s in res.sites)])  # "site @ condition" labels when conditions are mixed
+    print(f"    {'site':>{w}}  {'all':>22}  {'silent':>14}  {'active':>14}  {'in burst':>14}")
     for site in res.sites:
         rows = {r["state"]: r for r in res.site_table if r["site"] == site}
         a = rows["all"]
         cells = [f"{rows[s]['n_evoked']}/{rows[s]['n_pulses']} ({rows[s]['p_sham']:.0%})" if rows[s]["n_pulses"] else "-"
                  for s in ("silent", "active", "in_burst")]  # fmt: skip
-        print(f"    {site:>6}  {a['n_evoked']:>3}/{a['n_pulses']:<3} vs {a['p_sham']:5.1%} p {a['p_value']:<6.2g}"
+        print(f"    {site:>{w}}  {a['n_evoked']:>3}/{a['n_pulses']:<3} vs {a['p_sham']:5.1%} p {a['p_value']:<6.2g}"
               f"  {cells[0]:>14}  {cells[1]:>14}  {cells[2]:>14}")  # fmt: skip
     sig = [r for r in res.response_table if r["q_value"] < config.alpha]
     print(f"\n  spike responses outside bursts (q < {config.alpha:g}): {len(sig)} site-electrode pairs")
     for r in sorted(sig, key=lambda r: r["q_value"])[:10]:
-        print(f"    {r['site']:>6} -> {r['channel']:<4} {r['mean_spikes']:.2f} vs {r['mean_spikes_sham']:.2f} spikes, "
+        print(f"    {r['site']:>{w}} -> {r['channel']:<4} {r['mean_spikes']:.2f} vs {r['mean_spikes_sham']:.2f} spikes, "
               f"first spike {r['median_first_ms']:.0f} ms, q {r['q_value']:.2g}")  # fmt: skip
     print("\n  decoding the stimulated site from responses (cross-validated balanced accuracy):")
     for task, d in res.decoding.items():
@@ -295,15 +313,20 @@ def _evoked(args: argparse.Namespace) -> int:
               f"{d['null_mean']:.2f}, p {d['p_value']:.2g}); {len(d['classes'])} classes, {d['n_folds']} folds")
         print("      recall: " + ", ".join(f"{c} {v:.2f}" for c, v in d["recall"].items()))
     pairs = res.decoding.get("site_pairs", [])
-    if pairs:
-        sites = sorted({r["a"] for r in pairs} | {r["b"] for r in pairs})
-        acc = {(r["a"], r["b"]): r for r in pairs} | {(r["b"], r["a"]): r for r in pairs}
-        print(f"  pairwise site decoding (balanced accuracy; * q < {config.alpha:g}):")
-        print("    " + " " * 6 + "".join(f"{s:>7}" for s in sites))
+    by_condition: dict[str, list[dict]] = {}
+    for r in pairs:  # with mixed conditions, sites are paired within a condition: one matrix each
+        by_condition.setdefault(r["a"].split(" @ ", 1)[1] if " @ " in r["a"] else "", []).append(r)
+    for condition, group in by_condition.items():
+        short = {lab: lab.split(" @ ", 1)[0] for r in group for lab in (r["a"], r["b"])}
+        sites = sorted(short, key=lambda lab: short[lab])
+        acc = {(r["a"], r["b"]): r for r in group} | {(r["b"], r["a"]): r for r in group}
+        at = f" at {condition}" if condition else ""
+        print(f"  pairwise site decoding{at} (balanced accuracy; * q < {config.alpha:g}, BH over all pairs):")
+        print("    " + " " * 6 + "".join(f"{short[s]:>7}" for s in sites))
         for a in sites:
             cells = [("      -" if a == b else f"{acc[a, b]['balanced_accuracy']:6.2f}{'*' if acc[a, b]['q_value'] < config.alpha else ' '}")
                      for b in sites]  # fmt: skip
-            print(f"    {a:>6}" + "".join(cells))
+            print(f"    {short[a]:>6}" + "".join(cells))
     top = sorted((r for r in res.channel_table if r["q_value"] == r["q_value"]), key=lambda r: r["p_value"])[:8]
     if top:
         print("  electrodes that best separate sites (Kruskal-Wallis): "
@@ -364,7 +387,15 @@ def _plot(args: argparse.Namespace) -> int:
     elif (path / f"graph_{args.method}").is_dir():  # results/<recording>
         path = path / f"graph_{args.method}"
     if not (path / "result.json").exists():
-        path = path / args.spike_set
+        if args.condition:
+            from meagraph.connectivity.pipeline import condition_folder_name
+
+            path = path / condition_folder_name(args.condition)
+        elif not (path / args.spike_set / "result.json").exists() and path.name == "graph_stim_evoked" and path.is_dir():
+            options = sorted(d.name for d in path.iterdir() if (d / "result.json").exists())
+            raise SystemExit(f"{path} has one graph per stimulus condition: {options}; choose one with --condition")
+        else:
+            path = path / args.spike_set
     if not (path / "result.json").exists():
         raise SystemExit(f"no graph at {path}; run `meagraph graph` first")
     saved = load_graph(path)
@@ -374,7 +405,8 @@ def _plot(args: argparse.Namespace) -> int:
     if res.method == "stim_evoked":  # site -> electrode: PSTHs of the target around the site's pulses
         from meagraph.connectivity.pipeline import pulse_triggered_psth
 
-        ccg, lags = pulse_triggered_psth(saved.detection, saved.trains, bin_ms=1.0, range_ms=(-30.0, 60.0))
+        ccg, lags = pulse_triggered_psth(saved.detection, saved.trains, bin_ms=1.0, range_ms=(-30.0, 60.0),
+                                         condition=params.get("condition", ""))  # fmt: skip
         extra = dict(xlabel="ms after the site's pulses", window_ms=(0.0, params["response_ms"]))
     else:
         ccg, lags = cross_correlograms(saved.trains, params.get("bin_ms", 0.5), params.get("max_lag_ms", 30.0))
@@ -466,6 +498,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--method", default="cch_jitter", help="graph to show when PATH is a recording")
     p.add_argument("--spike-set", choices=["all", "no_bursts", "robust"], default="all",
                    help="all spikes, network bursts removed, or edges significant in both")
+    p.add_argument("--condition", help="stim_evoked of a recording with several stimulus conditions: the condition's graph, "
+                                       "e.g. 1000mV_500us_bi500 (its folder name) or 1000mV/500us/bi500")
     p.add_argument("--save", help="write an image instead of opening a window")
     p.set_defaults(func=_plot)
 

@@ -4,6 +4,8 @@ from meagraph.io.inventory import FileInventory, format_inventory, inspect_file
 from meagraph.io.mcs_events import (
     EventEntity,
     StimEvents,
+    condition_label,
+    mixed_conditions,
     read_event_entities,
     read_mcs_spikes,
     read_stim_events,
@@ -21,6 +23,8 @@ __all__ = [
     "StimEvents",
     "StimLog",
     "align_stimlog",
+    "condition_label",
+    "mixed_conditions",
     "find_stimlog",
     "read_stimlog",
     "format_inventory",

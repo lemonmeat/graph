@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 from spikeinterface.core import BaseRecording
 
-from meagraph.io.mcs_events import StimEvents
+from meagraph.io.mcs_events import StimEvents, mixed_conditions
 from meagraph.stimulation.artifacts import Recovery, SiteInference, infer_site, measure_recovery
 
 
@@ -34,6 +34,9 @@ class StimAudit:
     # 0 = not checkable because several channels saturate; the channel with the largest artifact or
     # "saturated"; number of that site's pulses)
     site_check: tuple[tuple[str, int, str, int], ...] = ()
+    # Outputs that mix stimulus conditions (stimulation log): recovery measured on each
+    # condition's pulses alone, as detection blanks them; (condition, n pulses, recovery)
+    recovery_by_condition: tuple[tuple[str, int, Recovery], ...] = ()
 
 
 def check_logged_sites(recording: BaseRecording, stim: StimEvents, n_trials: int = 10) -> tuple[tuple[str, int, str, int], ...]:
@@ -111,6 +114,12 @@ def audit_stimulation(recording: BaseRecording, stim: StimEvents, **recovery_kwa
     unrecovered = int(np.isnan(recovery.recovery_ms).sum())
     if unrecovered:
         warns.append(f"{unrecovered} channels still show artifact {recovery.max_post_ms:g} ms after the pulse")
+    by_condition = []
+    if mixed_conditions(stim):
+        conditions = stim.conditions
+        for condition in dict.fromkeys(conditions.tolist()):
+            part = stim.select(conditions == condition)
+            by_condition.append((condition or "unknown", part.n, measure_recovery(recording, part, **recovery_kwargs)))
     return StimAudit(
         source=stim.source,
         n_pulses=stim.n,
@@ -125,6 +134,7 @@ def audit_stimulation(recording: BaseRecording, stim: StimEvents, **recovery_kwa
         repeatability_r=_repeatability(recording, stim),
         warnings=tuple(warns),
         site_check=site_check,
+        recovery_by_condition=tuple(by_condition),
     )
 
 
@@ -147,6 +157,15 @@ def format_audit(audit: StimAudit) -> str:
         if r.size
         else f"  recovery: not measurable ({rec.n_epochs} usable pulses)",
     ]
+    if audit.recovery_by_condition:
+        lines.append("  recovery by stimulus condition (the pooled value above mixes them; detection blanks each condition by its own):")
+    for condition, n, cr in audit.recovery_by_condition:
+        v = cr.recovery_ms[~np.isnan(cr.recovery_ms)]
+        unrecovered = int(np.isnan(cr.recovery_ms).sum()) if cr.n_epochs >= 3 else 0
+        lines.append(f"    {condition} ({n} pulses, {cr.n_epochs} usable): " + (
+            f"median {np.median(v):.1f} ms, 90th percentile {np.percentile(v, 90):.1f} ms"
+            + (f", {unrecovered} channels unrecovered at {cr.max_post_ms:g} ms" if unrecovered else "")
+            if v.size else "not measurable (blanked for the maximum)"))  # fmt: skip
     for site, rank, top, n in audit.site_check:
         if rank > 1:
             lines.append(f"    logged site {site} ({n} pulses): artifact rank {rank or 'n/a'}, largest on {top}")

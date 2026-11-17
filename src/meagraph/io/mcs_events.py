@@ -7,6 +7,7 @@ All times are seconds on the MCS recording clock.
 
 from __future__ import annotations
 
+import math
 import re
 import warnings
 from dataclasses import dataclass, replace
@@ -48,6 +49,11 @@ class StimEvents:
     The electrode that was stimulated is not stored in MCS files. It is supplied from metadata,
     never read from the file: either one ``site`` for every pulse (``--stim-site``), or one site
     per pulse in ``pulse_sites`` (from a stimulation log; "" where a pulse's site is unknown).
+
+    A stimulation log also gives each pulse's amplitude (``pulse_amplitudes``, in
+    ``amplitude_unit`` as logged: µV in voltage mode, nA in current mode), the duration of its
+    waveform's first phase (``pulse_phase_us``) and the waveform's name (``pulse_waveforms``).
+    NaN or "" where unknown. Together they form the pulse's :attr:`conditions`.
     """
 
     source: str
@@ -56,10 +62,16 @@ class StimEvents:
     offsets_s: np.ndarray | None
     site: str | None = None
     pulse_sites: tuple[str, ...] | None = None
+    pulse_amplitudes: tuple[float, ...] | None = None
+    amplitude_unit: str = ""
+    pulse_phase_us: tuple[float, ...] | None = None
+    pulse_waveforms: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
-        if self.pulse_sites is not None and len(self.pulse_sites) != self.onsets_s.size:
-            raise ValueError(f"{self.source}: {len(self.pulse_sites)} pulse sites for {self.onsets_s.size} pulses")
+        for name in ("pulse_sites", "pulse_amplitudes", "pulse_phase_us", "pulse_waveforms"):
+            value = getattr(self, name)
+            if value is not None and len(value) != self.onsets_s.size:
+                raise ValueError(f"{self.source}: {len(value)} {name.replace('_', ' ')} for {self.onsets_s.size} pulses")
         if self.pulse_sites is not None and self.site is not None:
             raise ValueError(f"{self.source}: give one site for all pulses or one per pulse, not both")
 
@@ -85,19 +97,67 @@ class StimEvents:
             return np.full(self.n, self.site, dtype=object)
         return None
 
+    @property
+    def conditions(self) -> np.ndarray:
+        """Each pulse's stimulus condition, e.g. "1000mV/500us/bi500" (see :func:`condition_label`);
+        "" where the log gave no parameters (or there is no log)."""
+        n = self.n
+        amps = self.pulse_amplitudes or (float("nan"),) * n
+        phases = self.pulse_phase_us or (float("nan"),) * n
+        waves = self.pulse_waveforms or ("",) * n
+        return np.array([condition_label(a, self.amplitude_unit, p, w) for a, p, w in zip(amps, phases, waves)], dtype=object)
+
     def with_site(self, site: str | None) -> StimEvents:
         return replace(self, site=None if site is None else str(site), pulse_sites=None)
 
     def with_pulse_sites(self, sites) -> StimEvents:
         return replace(self, site=None, pulse_sites=tuple("" if s is None else str(s) for s in sites))
 
+    def with_pulse_params(self, amplitudes=None, unit: str = "", phase_us=None, waveforms=None) -> StimEvents:
+        """Per-pulse stimulus parameters from a stimulation log (None: not logged)."""
+
+        def floats(v):
+            return None if v is None else tuple(float("nan") if x is None else float(x) for x in v)
+
+        return replace(self, pulse_amplitudes=floats(amplitudes), amplitude_unit=unit or "", pulse_phase_us=floats(phase_us),
+                       pulse_waveforms=None if waveforms is None else tuple("" if w is None else str(w) for w in waveforms))  # fmt: skip
+
     def select(self, index) -> StimEvents:
         """The pulses at ``index`` (indices or a boolean mask)."""
         idx = np.arange(self.n)[index]
+
+        def pick(v):
+            return None if v is None else tuple(v[i] for i in idx)
+
         return replace(
             self, onsets_s=self.onsets_s[idx], offsets_s=None if self.offsets_s is None else self.offsets_s[idx],
-            pulse_sites=None if self.pulse_sites is None else tuple(self.pulse_sites[i] for i in idx),
+            pulse_sites=pick(self.pulse_sites), pulse_amplitudes=pick(self.pulse_amplitudes),
+            pulse_phase_us=pick(self.pulse_phase_us), pulse_waveforms=pick(self.pulse_waveforms),
         )  # fmt: skip
+
+
+def condition_label(amplitude: float, unit: str, phase_us: float, waveform: str = "") -> str:
+    """A pulse's stimulus condition as text: amplitude, first-phase duration and waveform name,
+    e.g. "1000mV/500us/bi500". Amplitudes logged in µV are shown in mV and nA in µA. Unknown
+    parts are left out; "" if nothing is known."""
+    parts = []
+    if not math.isnan(amplitude):
+        scale = {"uv": (1e-3, "mV"), "µv": (1e-3, "mV"), "na": (1e-3, "uA")}.get(unit.lower())
+        value, shown = (amplitude * scale[0], scale[1]) if scale else (amplitude, unit)
+        parts.append(f"{value:g}{shown}")
+    if not math.isnan(phase_us):
+        parts.append(f"{phase_us:g}us")
+    if waveform:
+        parts.append(waveform)
+    return "/".join(parts)
+
+
+def mixed_conditions(stim) -> bool:
+    """Whether the pulses of ``stim`` (StimEvents, or a sequence of them) were given more than one
+    stimulus condition. Only then do analyses split by condition; otherwise they run as before."""
+    events = [stim] if isinstance(stim, StimEvents) else list(stim)
+    known = {c for s in events for c in s.conditions.tolist() if c}
+    return len(known) > 1
 
 
 def read_event_entities(path: str | Path, recording_index: int = 0) -> list[EventEntity]:
