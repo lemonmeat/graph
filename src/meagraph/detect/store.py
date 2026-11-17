@@ -129,6 +129,8 @@ def _read_stim(path: Path) -> tuple[StimEvents, ...]:
 
 def load_detection(folder: str | Path) -> DetectionResult:
     folder = Path(folder)
+    if not (folder / "spikes.npz").exists():
+        raise ValueError(f"{folder} is not a detection folder (no spikes.npz)")
     if not (folder / "stimulation.csv").exists():
         raise ValueError(f"{folder} was written by an older meagraph (no stimulation.csv); re-run `meagraph detect`")
     cfg = load_yaml(folder / "config.yaml", DetectionConfig)

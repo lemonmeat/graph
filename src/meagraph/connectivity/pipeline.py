@@ -10,7 +10,7 @@ import csv
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Literal
 
 import numpy as np
@@ -115,7 +115,9 @@ def load_graph(folder: str | Path) -> SavedGraph:
     if not meta.get("pipeline"):
         raise ValueError(f"{folder} has no pipeline settings (written by an older meagraph); re-run `meagraph graph`")
     prov = json.loads((folder / "provenance.json").read_text())
-    detection = load_detection(folder.parent.parent / Path(prov["inputs"][0]["path"]).parent.name)
+    # The input path may come from another OS (graphs computed on the lab PC store D:\...);
+    # PureWindowsPath splits on both "\\" and "/", so it reads either.
+    detection = load_detection(folder.parent.parent / PureWindowsPath(prov["inputs"][0]["path"]).parent.name)
     trains = analysed_trains(detection, GraphConfig(**meta["pipeline"]))
     if folder.name == "no_bursts":
         trains = trains.without_periods(np.loadtxt(folder.parent / "network_bursts.csv", delimiter=",", skiprows=1, ndmin=2))

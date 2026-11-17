@@ -252,6 +252,12 @@ def test_saved_graph_reloads_with_its_tested_spikes_and_plots(tmp_path):
         saved = load_graph(graph / sub)
         again = estimate(saved.trains, "cch_hollow", saved.result.params)
         np.testing.assert_array_equal(again.p_values, saved.result.p_values)  # same spikes as when it was tested
+    # computed on Windows (the lab PC), loaded elsewhere: the provenance path uses backslashes
+    prov_file = graph / "all" / "provenance.json"
+    prov = json.loads(prov_file.read_text())
+    prov["inputs"][0]["path"] = r"D:\Andre Graves\results\rec\detect\spikes.npz"
+    prov_file.write_text(json.dumps(prov))
+    assert load_graph(graph / "all").detection.trains.unit_ids == det.trains.unit_ids
     out = tmp_path / "graph.png"
     assert main(["plot", str(graph), "--spike-set", "no_bursts", "--save", str(out)]) == 0
     assert out.stat().st_size > 10_000
