@@ -40,8 +40,11 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **`meagraph evoked`** (2026-11-12, D28 Proposed): per-site evoked bursts vs state-matched shams, spike responses per electrode, and site decoding (all readouts, unstimulated readouts only, and every site pair) from `results/<recording>`. Blanking is equalized across conditions; spikes 2 ms before pulses are dropped (pulse-locked artifact at −1.0 to −1.5 ms on every electrode in the 2026-11-12 files, which is D26 on a valid recording).
   - 2026-11-12 at 1000 mV: 68, 36, 58, 46 evoke bursts on 80–100 % of pulses (sham ≤ 1.6 %), even from silence; 56 67 %, 21 40 %, 55 and 61 0 %. From unstimulated readouts the sites form two blocks (burst vs no burst); within the burst block only 36 vs 58 replicates as separable. 46 is not separable from 36, 58 or 68.
   - 5 pulses per site cannot give pairwise q < 0.05; use ≥ 15. Runtime ~2 min for 120 pulses (pairwise permutations).
-- **Next is Phase 5:** GLM (NeMoS), stimulus-evoked estimator, transfer entropy if practical.
-- Decisions D1–D17 and D21 are Accepted (D11 superseded by D21). D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults), D20 (self-contained result folders), D22 (TSPE, CFP, inhibition) and D28 (evoked responses) are Proposed.
+- **Phase 5, part 1** (2026-11-16):
+  - **`glm`** (D29 Proposed): Poisson GLM via NeMoS (6 raised cosines over 25 ms, causal network-rate covariate, ridge λ = 1, LBFGS then ≤ 3 Newton steps, Wald test + BH). Signed. Runs in `meagraph graph` by default. The network covariate **must be causal**: a centred one made independent units look inhibitory. Slow: minutes per graph (NeMoS fit per target).
+  - **`stim_evoked`** (D30 Proposed): site → electrode edges from pulses with known sites (`meagraph.connectivity.stim`, `pipeline.stim_graph_from_detection`). Pulse-level Poisson-binomial test against each pulse's own baseline; latency floor = detection's blanking (9–12 ms on 2026-11-12, so no ≤ 5 ms "direct" edge is observable). Writes `graph_stim_evoked/all/` + `stim_pairs.csv`; `meagraph plot --method stim_evoked` shows pulse-triggered PSTHs. `stim_connectivity.py` deleted.
+- **Next in Phase 5:** run `glm` in the benchmark grid; transfer entropy if practical.
+- Decisions D1–D17 and D21 are Accepted (D11 superseded by D21). D18 (excluding 200 ms after each pulse), D19 (benchmark-based defaults), D20 (self-contained result folders), D22 (TSPE, CFP, inhibition), D28 (evoked responses), D29 (GLM) and D30 (stimulus-evoked connectivity) are Proposed.
 - **Legacy scripts retired** 2026-10-05 (see Existing code below).
 
 ## Hardware and data
@@ -67,7 +70,7 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
   - TODO: amplitude units and mode.
 - **Older recordings** come from a standard 60-channel planar MEA. The pipeline should handle both through swappable probe definitions (TODO: MEA type and sample files).
 - **Recording types:** spontaneous activity and electrical stimulation sessions, including before/after stimulation blocks for plasticity comparison.
-- **Sample data location:** `data/` (moved from the repo root 2026-10-05), with each recording's results in `data/results/<recording>/`. `data/` and `results/` (benchmark output) are git-ignored.
+- **Sample data location:** one folder per recording day, `data/<YYYY-MM-DD>/` (since 2026-11-16), holding that day's `.h5`, `.stimlog.csv` and `.notes.yaml` files, with each recording's results in `data/<YYYY-MM-DD>/results/<recording>/`. The day is the date prefix of the file name, so a session past midnight spans two folders. Old `provenance.json` files still hold the pre-move absolute paths; `source_recording` falls back to the `.h5` next to `results/`. `data/` and `results/` (benchmark output) are git-ignored.
   - 3 files from exp3 DIV140 (2026-07-27), plus `*.spikes.h5` sidecars from `spikes.py`.
   - 2 files from DIV142 (2026-07-29): a 10 min spontaneous recording, and a 32 min (8 GB) "Associative Stimulation 1" recording using STG 1 + STG 2. Their names contain spaces.
 - **Associative protocol:** single pulses of about 2 ms; trains of 1/2/3 pulses every 5 s; alternating 50-train blocks per STG output. The whole array saturates during pulses, so the **stimulated sites cannot be inferred (Q14)**.
@@ -82,7 +85,6 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 - **`mcs.py` labels events off by one** (Start is shown as Stop). Do not reuse `mcs.triggers()` labels. See `docs/EXISTING_CODE.md`.
 - **SpikeInterface** `read_mcsh5` gives correct values but drops `t_start`, ignores `RowIndex`, and has a wrong ADZero formula. Hence D1, a custom `BaseRecording`.
 - **SpikeInterface** `get_channel_locations()` defaults to 2D `xy`, and SI's sparsity and neighbour code uses that default. Always pass `axes="xyz"` (D3).
-- `stim_connectivity.py` cannot run on real files: it expects `[src N]` event labels that MCS does not write.
 - MCS segment streams can contain events from before the saved analog data starts. `read_mcs_spikes` drops them with a warning.
 - **Elephant 1.2.1 bugs (D13).** `jitter_spikes` shifts spikes by 3 × `t_start` when `t_start` ≠ 0, and it uses global RNG. STTC's `np.isclose` widens dt by 10⁻⁵·t. meagraph has its own versions. Use Elephant's STTC only as a reference for t < 0.5 s.
 - **SpikeInterface `compute_correlograms(sorting)`:** `ccg[a, b]` counts t_a − t_b. `meagraph.connectivity.cross_correlograms` transposes it to (source, target).
@@ -93,13 +95,13 @@ Analysis of extracellular recordings from in vitro neuronal cultures on a custom
 ## Existing code
 
 - **Legacy scripts removed 2026-10-05** (owner approved): `mcs.py`, `spikes.py`, `visualize.py`, `spontaneous_ccg.py`, `stim_audit.py`. Recover any with `git show f3045f7:<name>`. What they did, and their bugs, is in `docs/EXISTING_CODE.md`.
-- `stim_connectivity.py` remains only as the reference for the Phase 5 stimulus-evoked estimator. It cannot run (it imports the removed `mcs.py`). Delete it once that port is done.
+- `stim_connectivity.py` was ported to `stim_evoked` (D30) and deleted 2026-11-16 (`git show 15197a7:stim_connectivity.py`).
 - The `spikes.py` regression baseline and the `.spikes.h5` reader were removed 2026-10-05 (D21). Nothing reads the three DIV140 `*.spikes.h5` files left in `data/`; `meagraph` commands skip them when a shell glob picks them up.
 
 ## Environment
 
 - Python 3.13.13 in a uv-managed `.venv`. The venv has no pip; use `uv pip install --python .venv/bin/python ...`.
-- **Installed in `.venv`:** spikeinterface 0.105.0, probeinterface 0.4.0, neo 0.14.5, elephant 1.2.1, numpy 2.5.3, pydantic 2.13, pytest 9.1, plus `meagraph` itself in editable mode.
+- **Installed in `.venv`:** spikeinterface 0.105.0, probeinterface 0.4.0, neo 0.14.5, elephant 1.2.1, numpy 2.5.3, pydantic 2.13, pytest 9.1, nemos 0.2.9 (the `glm` extra; pulls in JAX), plus `meagraph` itself in editable mode.
 - To reinstall the package: `uv pip install --python .venv/bin/python -e ".[dev]"`.
 - **Tests:** `.venv/bin/python -m pytest`. Real-file tests are marked `data` and look for recordings in `data/` or in `$MEAGRAPH_DATA_DIR`.
 - **Primary machine:** MacBook Pro, Apple M3 Pro, 18 GB RAM. Avoid tools that require CUDA for core functionality; GPU spike sorters are optional extras only.
@@ -145,6 +147,7 @@ The full list with context is in `docs/PLAN.md` § Open questions.
 - **Q19.** Accept the D22 choices (inhibition model, TSPE significance and reverse rule, CFP test, CFP width rule, CFP boundary-delay rule)?
 - **Q23.** Recordings with only Filter (3): keep saving raw (recommended), or adopt the D27 phase correction (needs the online filter settings fixed, since they are not stored in the file)?
 - **Q24.** Accept D28 (equalized blanking windows, 2 ms pre-pulse drop, burst onsets from 0 ms, 5 s active/silent threshold, 12–150 ms window)? Should the pre-pulse drop move into detection (D26/Q22)?
+- **Q25.** Accept D29 (GLM: basis, causal network covariate, ridge λ = 1, Wald test) and D30 (stim_evoked: 30 ms window, pulse-level test, `evoked` as the default edge rule)?
 - **Q18.** Accept D19? It would make the burst-removed analysis primary, set `drop_symmetric=False`, and make `cch_jitter` the primary method.
 
 Resolved 2026-10-03:

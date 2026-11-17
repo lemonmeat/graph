@@ -2,7 +2,7 @@
 
 Snapshot of the pre-refactor scripts as of 2026-10-03.
 
-**Replacements (Phases 2–3).** `spikes.py` was reproduced by a `legacy` detection profile (regression-tested; both retired 2026-10-05, D21), `visualize.py` by `meagraph view`, and `stim_audit.py` by `meagraph audit`. **Removed 2026-10-05** with the owner's approval: `mcs.py`, `spikes.py`, `visualize.py`, `spontaneous_ccg.py`, `stim_audit.py` and `ccg_connectivity.npz`. All are in git at commit `f3045f7` (`git show f3045f7:spikes.py`). Only `stim_connectivity.py` remains, as the reference for the Phase 5 stimulus-evoked estimator; it can no longer run, because it imports `mcs.py`. This document stays as the record of what the scripts did and of their bugs. These were the reference implementation. `spikes.py` is the regression baseline, and the viewer UX in `visualize.py` must survive the refactor. Line numbers refer to this snapshot.
+**Replacements (Phases 2–3).** `spikes.py` was reproduced by a `legacy` detection profile (regression-tested; both retired 2026-10-05, D21), `visualize.py` by `meagraph view`, and `stim_audit.py` by `meagraph audit`. **Removed 2026-10-05** with the owner's approval: `mcs.py`, `spikes.py`, `visualize.py`, `spontaneous_ccg.py`, `stim_audit.py` and `ccg_connectivity.npz`. All are in git at commit `f3045f7` (`git show f3045f7:spikes.py`). `stim_connectivity.py` was ported to `meagraph.connectivity.stim` (`meagraph graph --method stim_evoked`, D30) and removed on 2026-11-16 (`git show 15197a7:stim_connectivity.py`). This document stays as the record of what the scripts did and of their bugs. These were the reference implementation. `spikes.py` is the regression baseline, and the viewer UX in `visualize.py` must survive the refactor. Line numbers refer to this snapshot.
 
 The scripts form a flat layout around a shared reader:
 
@@ -175,6 +175,8 @@ The script reports the following:
 ---
 
 ## `stim_connectivity.py`: evoked connectivity from site-by-site stimulation
+
+**Ported 2026-11-16** to `meagraph.connectivity.stim` (D30): what was kept, changed and dropped is in DECISIONS.md D30.
 
 This script was written for a protocol where every site is stimulated in turn and event labels contain `"[src <electrode>]"`. The `--truth mcs_stim_truth.npz` option suggests those labels came from a simulator. **No such labels exist in the real MCS files**, so on the current files the script exits with "could not match trigger entities to channels".
 

@@ -123,12 +123,26 @@ CFP (le Feber et al., 2007) is the probability that electrode j fires in the 1 m
 
 To compare with the lab's earlier analyses (Kumar et al., 2026), the cross-correlogram (2 ms bins, ±100 ms) of each pair was also fitted with a sum of two Gaussians, a1·exp(−(x − b1)²/2c1²) + a2·exp(−(x − b2)²/2c2²), and the connection weight was (a1 + a2)/(c1 + c2). The net direction was taken from the side of zero on which the fitted curve peaks. As in the original analysis, no significance test was applied. The correlogram normalization and lag range of the original analysis were not reported; the values used here are assumptions (DECISIONS.md D23).
 
+### Poisson generalized linear model (`glm`, DECISIONS.md D29)
+
+Each unit's spike counts in 1 ms bins were modelled as Poisson with log rate b + Σ_k h_k ∗ s_k(t) + g·N(t) (Pillow et al., 2008; Stevenson et al., 2008), fitted with NeMoS (LBFGS, refined by up to three Newton steps in double precision). The coupling filters h_k (one per unit, including the target's own history) were expanded on six raised-cosine, log-stretched basis functions spanning lags of 1–25 ms (NeMoS `RaisedCosineLogConv`); the convolution is causal and excludes the current bin. N(t) is log(1 + the summed spike counts of all other units, smoothed over past bins only with a half-Gaussian of SD 20 ms, then standardized), a stand-in for the shared drive of network bursts; like every regressor it is causal, because a centred kernel lets the source's later spikes into it and produces spurious inhibitory edges. A weak ridge penalty (λ = 1 on the summed log-likelihood, i.e. a Gaussian prior of SD 1 on each coefficient) makes the fit converge despite refractoriness, which otherwise drives the self-history coefficient at the shortest lag to −∞. Each coupling filter was tested against zero with a Wald χ² test (six degrees of freedom) using the penalized Fisher information; p-values were corrected with Benjamini–Hochberg across ordered pairs. The weight is the filter's value at its largest-magnitude lag (log gain; positive excitatory, negative inhibitory) and that lag is the delay. The burst control (below) was applied as for the other methods.
+
+**What the GLM measures.** Coupling is conditional on every other recorded unit and on the network rate, so a chain i → k → j or common input from a recorded unit does not create an i → j edge, unlike pairwise methods. Common input from unrecorded neurons can still do so. The network covariate contains the source's own spikes, so with few recorded units it absorbs part of a real edge.
+
+### Stimulus-evoked connectivity (`stim_evoked`, DECISIONS.md D30)
+
+For recordings in which every pulse's site is known (stimulation log, D25), each stimulated site was related to each readout electrode. The response window ran from the end of detection's blanking after that site's pulses (pulse + measured artifact recovery + guard; 9–12 ms in the 2026-11-12 recordings) to 30 ms after onset. Each pulse's baseline was its own 300 ms pre-pulse period, ending 2 ms before the pulse, cut into windows of the response window's length; windows within 200 ms of an earlier pulse were not used. The test statistic was the number of pulses followed by at least one spike; under the null, each pulse responds with its own baseline probability (the fraction of its baseline windows containing a spike, with a +0.5 / +1 correction), so the count is Poisson-binomial and the p-value is its exact upper tail. p-values were corrected with Benjamini–Hochberg across site–electrode pairs; edges are increases only. The weight is the evoked spike count per pulse above baseline. Latency is the first 1 ms PSTH bin after the blanking floor that exceeds the baseline bins' mean + 3 SD (marked censored when it is the first bin), and jitter is the SD of first-spike latencies. Following the original analysis script, an edge was additionally called direct when latency ≤ 5 ms and jitter ≤ 1.5 ms, and network deconvolution (A = R(I + R)⁻¹, adapted from Feizi et al., 2013) was applied to the significant effects as an optional rule.
+
+**What it can claim.** A site → electrode edge means that stimulating the site changes the electrode's firing within 30 ms. Because blanking hides the first 9–12 ms, monosynaptic latencies are not observable, and at 1000 mV most responses ride on evoked network bursts; these are causal but mostly polysynaptic effects.
+
 ### Multiple comparisons and burst control
 
 **Multiple comparisons.** p-values were corrected with the Benjamini–Hochberg procedure (Benjamini & Hochberg, 1995) at a false discovery rate of 5 %:
 
 - correlogram methods: across all tested ordered pairs;
-- STTC: across unordered pairs.
+- STTC: across unordered pairs;
+- GLM: across ordered pairs;
+- stimulus-evoked: across site–electrode pairs.
 
 **Burst control.** Each method was run on all spikes and again with network-burst periods removed. Edges significant in both analyses (and, for TSPE, of the same sign) are reported as robust.
 
@@ -254,11 +268,15 @@ Ranking inhibitory pairs by p-value (ROC area, 0.5 = chance): TSPE 0.54–0.81, 
 - Denker, M., Yegenoglu, A., & Grün, S. (2018). Collaborative HPC-enabled workflows on the HBP Collaboratory using the Elephant framework. *Neuroinformatics 2018*, P19.
 - Cutts, C. S., & Eglen, S. J. (2014). Detecting pairwise correlations in spike trains: an objective comparison of methods and application to the study of retinal waves. *Journal of Neuroscience*, 34(43), 14288–14303.
 - English, D. F., McKenzie, S., Evans, T., Kim, K., Yoon, E., & Buzsáki, G. (2017). Pyramidal cell-interneuron circuit architecture and dynamics in hippocampal networks. *Neuron*, 96(2), 505–520.
+- Feizi, S., Marbach, D., Médard, M., & Kellis, M. (2013). Network deconvolution as a general method to distinguish direct dependencies in networks. *Nature Biotechnology*, 31(8), 726–733.
 - Hawkes, A. G. (1971). Spectra of some self-exciting and mutually exciting point processes. *Biometrika*, 58(1), 83–90.
 - le Feber, J., et al. (2007). Conditional firing probabilities in cultured neuronal networks: a stable underlying structure in widely varying spontaneous activity patterns. *Journal of Neural Engineering*, 4(2), 54–67.
 - le Feber, J., Stegenga, J., & Rutten, W. L. C. (2010). The effect of slow electrical stimuli to achieve learning in cultured networks of rat cortical neurons. *PLoS ONE*, 5(1), e8871. *(Citation to be verified.)*
 - Martiniuc, A. V., et al. (2015). Paired spiking robustly shapes spontaneous activity in neural networks in vitro. arXiv:1510.09138.
+- NeMoS: NeuroML modeling of systems neuroscience data, version 0.2.9 (Flatiron Institute Center for Computational Neuroscience). https://github.com/flatironinstitute/nemos *(Citation to be verified.)*
+- Pillow, J. W., Shlens, J., Paninski, L., Sher, A., Litke, A. M., Chichilnisky, E. J., & Simoncelli, E. P. (2008). Spatio-temporal correlations and visual signalling in a complete neuronal population. *Nature*, 454(7207), 995–999.
 - Stark, E., & Abeles, M. (2009). Unbiased estimation of precise temporal correlations between spike trains. *Journal of Neuroscience Methods*, 179(1), 90–100.
+- Stevenson, I. H., Rebesco, J. M., Miller, L. E., & Körding, K. P. (2008). Inferring functional connections between neurons. *Current Opinion in Neurobiology*, 18(6), 582–588.
 
 - Buccino, A. P., Hurwitz, C. L., Garcia, S., Magland, J., Siegle, J. H., Hurwitz, R., & Hennig, M. H. (2020). SpikeInterface, a unified framework for spike sorting. *eLife*, 9, e61834.
 - Garcia, S., Sprenger, J., Holtzman, T., & Buccino, A. P. (2022). ProbeInterface: a unified framework for probe handling in extracellular electrophysiology. *Frontiers in Neuroinformatics*, 16, 823056.

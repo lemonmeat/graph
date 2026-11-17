@@ -33,7 +33,9 @@ def mcs_file(make_mcs_file):
 
 
 def real_recordings() -> list[Path]:
-    return sorted(p for p in DATA_DIR.glob("*.h5") if not p.name.endswith(".spikes.h5"))
+    """Recordings in ``DATA_DIR`` or its day folders (``data/<YYYY-MM-DD>/``), not in results."""
+    found = list(DATA_DIR.glob("*.h5")) + list(DATA_DIR.glob("*/*.h5"))
+    return sorted(p for p in found if not p.name.endswith(".spikes.h5"))
 
 
 @pytest.fixture(scope="session")

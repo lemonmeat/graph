@@ -17,13 +17,14 @@ Without uv, `python -m venv .venv` followed by `pip install -e ".[viewer,dev]"` 
 
 ## Use
 
-Put recordings in `data/` (git-ignored); results are written to `data/results/`. Quote file names that contain spaces.
+Put recordings in a day folder `data/<YYYY-MM-DD>/` (git-ignored), with the stimulation script's `.stimlog.csv` and `.notes.yaml` files beside them; results are written to `data/<YYYY-MM-DD>/results/`. Quote file names that contain spaces.
 
 ```bash
 meagraph info data/recording.h5     # what is in the file: streams, stimulation events, MCS spike streams
 meagraph audit data/recording.h5    # stimulation: pulse structure, stimulated site, artifact recovery per channel
-meagraph detect data/recording.h5 --stim-site 47   # spikes + signal-quality check, saved under data/results/
-meagraph graph data/recording.h5    # connectivity among signal-quality-checked electrodes (needs `detect` first)
+meagraph detect data/2026-11-12/recording.h5 --stim-site 47   # spikes + signal-quality check, saved under data/2026-11-12/results/
+meagraph graph data/recording.h5    # connectivity among signal-quality-checked electrodes (needs `detect` first);
+                                    # on stimulation recordings with a log, also site -> electrode edges (stim_evoked)
 meagraph plot data/recording.h5     # draw a graph in 3D with the correlogram of each edge (needs `graph` first)
 meagraph view data/recording.h5     # interactive viewer (click electrodes in the 3D map)
 meagraph benchmark --n-jobs 4       # score the connectivity methods on simulated networks (see below; --quick: seconds)
@@ -102,4 +103,4 @@ pytest                  # everything; tests marked `data` use the recordings in 
 pytest -m "not slow"    # skip the detection snapshot on the real recordings (about 30 s)
 ```
 
-The legacy scripts were retired on 2026-10-05; `docs/EXISTING_CODE.md` says what they did and how to recover them from git. `stim_connectivity.py` stays until its Phase 5 replacement exists.
+The legacy scripts were retired on 2026-10-05; `docs/EXISTING_CODE.md` says what they did and how to recover them from git. `stim_connectivity.py` was ported to `meagraph graph --method stim_evoked` and removed on 2026-11-16.

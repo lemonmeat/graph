@@ -25,7 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 viewer = ["matplotlib>=3.8"]
 nwb = ["pynwb>=2.8"]
-glm = ["nemos"]
+glm = ["nemos>=0.2.9,<0.3"]  # API changes between minors (solver and regularizer arguments)
 synth = ["brian2"]
 dev = ["pytest>=8"]
 

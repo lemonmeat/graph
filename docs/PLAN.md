@@ -61,7 +61,7 @@ src/meagraph/                    (package name: proposal, see Q11)
     cch.py           CCH: hollow-Gaussian baseline (Stark & Abeles), interval-jitter surrogate variant
     sttc.py          spike time tiling coefficient (Elephant) + surrogate significance
     cfp.py           conditional firing probability (le Feber et al.)
-    evoked.py        stimulus-triggered estimator (port of stim_connectivity.py)
+    stim.py          stimulus-evoked site -> electrode estimator (port of stim_connectivity.py, done 2026-11-16)
     glm.py           Poisson GLM coupling filters (NeMoS, optional extra)
     te.py            transfer entropy (IDTxl if practical, else documented omission)
     significance.py  surrogates (Elephant), BH-FDR, bootstrap CIs

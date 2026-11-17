@@ -145,9 +145,10 @@ def _graph(args: argparse.Namespace) -> int:
                   f"{int(qc.n_negative.sum())} negative vs {int(qc.n_positive.sum())} positive events over all electrodes")
             print("  `--channels all` builds a graph from every electrode anyway, but without the check its edges may be noise")
         return 0
-    graphs = graphs_from_detection(detection, methods=args.method, config=config)
+    methods = [m for m in args.method if m != "stim_evoked"]
+    graphs = graphs_from_detection(detection, methods=methods, config=config) if methods else {}
     print(f"{folder.parent.name}: {len(chosen)} {args.channels} channels {list(chosen)}")
-    if detection.stim and config.exclude_stim_post_ms > 0:
+    if methods and detection.stim and config.exclude_stim_post_ms > 0:
         n_pulses = sum(s.n for s in _pulses(detection.stim))
         print(f"  excluded {n_pulses} stimulation pulses (pulse to +{config.exclude_stim_post_ms:g} ms)")
     for method, bc in graphs.items():
@@ -159,7 +160,45 @@ def _graph(args: argparse.Namespace) -> int:
             arrow = "->" if bc.robust.directed else "--"
             delay = f", {e['delay_ms']:.2f} ms" if math.isfinite(e["delay_ms"]) else ""
             print(f"      {e['source']} {arrow} {e['target']}: weight {e['weight']:.3f}{delay}, p {e['p_value']:.2g}")
+    if "stim_evoked" in args.method:
+        _stim_graph(args, detection, folder)
     return 0
+
+
+def _stim_graph(args: argparse.Namespace, detection, folder: Path) -> None:
+    import numpy as np
+
+    from meagraph.connectivity.pipeline import save_stim_graph, stim_graph_from_detection
+    from meagraph.connectivity.stim import StimConnectivityConfig
+
+    pulses = _pulses(detection.stim)
+    if not any(s.n for s in pulses):
+        if args.method != ["stim_evoked"]:
+            return  # a spontaneous recording under the default method list: nothing to say
+        print("  stim_evoked: no stimulation pulses in this recording")
+        return
+    if all(s.sites is None for s in pulses):
+        print("  stim_evoked: skipped, the stimulated sites are unknown (no stimulation log; detect again with --stimlog or --stim-site)")
+        return
+    cfg = StimConnectivityConfig(response_ms=args.stim_response_ms, edge_rule=args.stim_rule)
+    res = stim_graph_from_detection(detection, cfg, channels=args.channels)
+    out = save_stim_graph(res, folder.parent / "graph_stim_evoked", channels=args.channels, inputs=[folder / "spikes.npz"], overwrite=True)
+    x = res.extra
+    sites = [s for s in dict.fromkeys(np.concatenate([s.sites for s in pulses if s.sites is not None]).tolist()) if s]
+    tested_sites = sorted({res.node_ids[i] for i in np.nonzero(res.tested)[0]}, key=sites.index)
+    floors = x["floor_ms"][res.tested]
+    print(f"  stim_evoked: {len(tested_sites)} of {len(sites)} sites tested, {int(res.tested.sum())} site-electrode pairs; "
+          f"response window from the blanking floor (median {np.median(floors):.0f} ms, range {floors.min():.0f}-{floors.max():.0f}) "
+          f"to {cfg.response_ms:g} ms")  # fmt: skip
+    if x["skipped_sites"]:
+        print(f"    not tested (< {cfg.min_pulses} pulses, or not an electrode): {list(x['skipped_sites'])}")
+    print(f"    evoked {int(x['evoked'].sum())}, direct (latency <= {cfg.direct_max_ms:g} ms, jitter <= {cfg.max_jitter_ms:g} ms) "
+          f"{int(x['direct'].sum())}, after deconvolution {int(x['deconvolved_mask'].sum())}; edges = '{cfg.edge_rule}' -> {out}")  # fmt: skip
+    for e in res.edges()[:8]:
+        i, j = res.node_ids.index(e["source"]), res.node_ids.index(e["target"])
+        lat = f"latency {'<=' if x['latency_censored'][i, j] else ''}{e['delay_ms']:.1f} ms" if math.isfinite(e["delay_ms"]) else "no latency"
+        print(f"      {e['source']} -> {e['target']}: {x['p_response'][i, j]:.0%} of {x['n_pulses_used'][i, j]} pulses (baseline "
+              f"{x['p_baseline'][i, j]:.0%}), +{e['weight']:.2f} spikes/pulse, {lat}, jitter {x['jitter_ms'][i, j]:.1f} ms, p {e['p_value']:.2g}")
 
 
 def _evoked(args: argparse.Namespace) -> int:
@@ -281,11 +320,18 @@ def _plot(args: argparse.Namespace) -> int:
     saved = load_graph(path)
     res = saved.result
     params = res.params
-    ccg, lags = cross_correlograms(saved.trains, params.get("bin_ms", 0.5), params.get("max_lag_ms", 30.0))
+    extra = {}
+    if res.method == "stim_evoked":  # site -> electrode: PSTHs of the target around the site's pulses
+        from meagraph.connectivity.pipeline import pulse_triggered_psth
+
+        ccg, lags = pulse_triggered_psth(saved.detection, saved.trains, bin_ms=1.0, range_ms=(-30.0, 60.0))
+        extra = dict(xlabel="ms after the site's pulses", window_ms=(0.0, params["response_ms"]))
+    else:
+        ccg, lags = cross_correlograms(saved.trains, params.get("bin_ms", 0.5), params.get("max_lag_ms", 30.0))
     recording = path.parent.parent.name
     fig = viz.plot_connectivity(res, ccg, lags, background_um=saved.detection.trains.positions_um,
                                 background_ids=saved.detection.trains.channel_ids or saved.detection.trains.unit_ids,
-                                title=f"{recording[:60]}\n{path.parent.name}/{path.name}")  # fmt: skip
+                                title=f"{recording[:60]}\n{path.parent.name}/{path.name}", **extra)  # fmt: skip
     if args.save:
         fig.savefig(args.save, dpi=130)
         print(f"saved {args.save}")
@@ -338,10 +384,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("graph", help="connectivity graphs from detected spikes, with the network-burst control")
     p.add_argument("path", help="recording (.h5; uses its newest detection) or a detection folder")
     p.add_argument("--spikes", help="detection folder, if not the newest one")
-    p.add_argument("--method", nargs="+", default=["cch_jitter", "cch_hollow", "sttc", "tspe", "cfp"])
+    p.add_argument("--method", nargs="+", default=["cch_jitter", "cch_hollow", "sttc", "tspe", "cfp", "glm", "stim_evoked"],
+                   help="estimators; stim_evoked (site -> electrode, needs per-pulse sites) runs only on stimulation recordings")
     p.add_argument("--channels", choices=["active", "all"], default="active", help="QC-active channels only (default)")
     p.add_argument("--exclude-stim-ms", type=float, default=200.0,
                    help="drop spikes from each pulse to this long after it (stimulation recordings; 0 keeps them)")
+    p.add_argument("--stim-response-ms", type=float, default=30.0, help="stim_evoked: response window end after pulse onset")
+    p.add_argument("--stim-rule", choices=["evoked", "direct", "deconvolved"], default="evoked",
+                   help="stim_evoked edges: any significant response, also short-latency and low-jitter, or also surviving deconvolution")
     p.set_defaults(func=_graph)
 
     p = sub.add_parser("evoked", help="evoked responses per stimulation site: bursts vs sham, electrode responses, site decoding")

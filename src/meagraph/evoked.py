@@ -482,6 +482,30 @@ def blanked_until_ms(detection: DetectionResult, channels: Sequence[str]) -> np.
     return out
 
 
+def blanked_until_by_site_ms(detection: DetectionResult, channels: Sequence[str]) -> tuple[list[str], np.ndarray]:
+    """Like :func:`blanked_until_ms`, but per stimulated site: ``(sites, floor)`` with
+    ``floor[k, c]`` the latest blanking end on channel ``c`` after the pulses of ``sites[k]``
+    (sites in order of first use; pulses without a known site are left out)."""
+    cfg = detection.config
+    floors: dict[str, np.ndarray] = {}
+    for s in pulse_events(detection.stim):
+        if s.sites is None or not s.n:
+            continue
+        recovery = detection.recovery_ms.get(s.source, {})
+        dur = s.durations_s if s.durations_s is not None else np.zeros(s.n)
+        for site in dict.fromkeys(s.sites.tolist()):
+            if not site:
+                continue
+            dur_ms = float(np.max(dur[s.sites == site])) * 1e3
+            row = floors.setdefault(site, np.zeros(len(channels)))
+            for c, ch in enumerate(channels):
+                r = recovery.get(ch, float("nan"))
+                post = cfg.recovery_max_post_ms if (ch == site or not np.isfinite(r)) else max(r, cfg.recovery_min_post_ms)
+                row[c] = max(row[c], dur_ms + post + cfg.guard_ms)
+    sites = list(floors)
+    return sites, np.array([floors[s] for s in sites]).reshape(len(sites), len(channels))
+
+
 def evoked_from_detection(detection: DetectionResult, config: EvokedConfig | None = None) -> EvokedResult:
     """Evoked responses on a detection result's readout channels. Network bursts are detected on
     every non-excluded channel, as in :func:`meagraph.connectivity.pipeline.graphs_from_detection`,

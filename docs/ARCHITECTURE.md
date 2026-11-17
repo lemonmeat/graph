@@ -92,7 +92,7 @@ Every config is a frozen pydantic model next to the step that uses it, saved as 
 | `preprocess` | `InterpolateWindowsRecording` (D9) and the `detection_band` chain. |
 | `stimulation` | Fixed and per-pulse blanking windows, `measure_recovery`, `infer_site`, `audit_stimulation`, `stimulation_periods`. |
 | `detect` | `DetectionConfig`, `detect_spikes`, polarity QC (D10), noise, network bursts (D15), result folders. |
-| `connectivity` | Estimator registry and `estimate`, `cch_hollow`, `cch_jitter`, `sttc`, `tspe` (signed: excitatory and inhibitory, via Elephant), `cfp`, `cch_gauss2` (Kumar et al. 2026 weight, no test), surrogates and fitted p-values (D17), FDR, graph files. `pipeline.py` connects it to detection results. |
+| `connectivity` | Estimator registry and `estimate`, `cch_hollow`, `cch_jitter`, `sttc`, `tspe` (signed: excitatory and inhibitory, via Elephant), `cfp`, `cch_gauss2` (Kumar et al. 2026 weight, no test), `glm` (Poisson GLM via NeMoS, signed, D29), surrogates and fitted p-values (D17), FDR, graph files. `stim.py`: site -> electrode evoked connectivity from pulse times and sites (D30; plain arrays in, not a registered estimator). `pipeline.py` connects both to detection results. |
 | `evoked` | Stimulus-evoked responses per site (D28): evoked bursts against state-matched shams, spike responses per electrode, cross-validated site decoding (all, unstimulated readouts, site pairs). Reads only a `DetectionResult`. |
 | `synth` | Hawkes network with known connections, optional inhibitory units (D22) and optional confounds (D16). |
 | `benchmark` | Scenarios, scoring (including indirect false positives), parallel runner. |
@@ -103,7 +103,7 @@ Every config is a frozen pydantic model next to the step that uses it, saved as 
 
 ## Output folders
 
-Results go to `results/<recording name>/` in the recording's folder, so with the recordings in `data/` they are in `data/results/`. Benchmark output goes to `results/benchmark/` in the working directory.
+Results go to `results/<recording name>/` in the recording's folder, so with the recordings in day folders `data/<YYYY-MM-DD>/` (each holding that day's `.h5`, `.stimlog.csv` and `.notes.yaml` files) they are in `data/<YYYY-MM-DD>/results/`. Benchmark output goes to `results/benchmark/` in the working directory.
 
 ```
 results/<recording>/
@@ -116,6 +116,10 @@ results/<recording>/
     network_bursts.csv           burst periods removed for no_bursts/
     all/, no_bursts/, robust/    each: graph.graphml, graph.json, edges.csv, matrices.npz, result.json,
                                  config.yaml (estimator params + GraphConfig), provenance.json (input: spikes.npz)
+  graph_stim_evoked/all/         meagraph graph on a stimulation recording with per-pulse sites (D30): the
+                                 same files as above (rows = stimulated sites) plus stim_pairs.csv (per
+                                 site-electrode pair: latency floor, latency, jitter, response probability
+                                 vs baseline, each edge rule's verdict); no burst control
   evoked/                        meagraph evoked (stimulation recordings)
     sites.csv                    per site and state: evoked-burst probability, Wilson CI, sham rate, p
     responses.csv                per site and electrode: spikes vs sham, first-spike latency, p, q

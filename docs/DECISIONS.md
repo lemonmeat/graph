@@ -658,3 +658,55 @@ The model check also confirms the filter settings at 20 kHz, where they had not 
 Sham rates are 0.2–1.6 %. Bursts are evoked from silent periods too (e.g. 36 8/8, 68 5/5), unlike 500 mV on 2026-11-10 (0/23). Evoked spikes have spontaneous-like waveforms (all negative, same amplitude; correlation 0.97 for stimulated electrodes' own post-pulse spikes). Order: 76, 62 and 67 at 15–25 ms, then 51 and 43 at 25–40 ms, with 46 elevated for over 150 ms. 61, 55 and 21 do not evoke bursts but their own electrodes fire after their pulses (61: 3.1 spikes, first at 74 ms, on 15/15).
 
 Decoding (21-55-43, chance 0.125): sites 0.48, sites from unstimulated readouts (44, 43, 52, 51, 62, 76, 67) 0.33, both p 0.005. The confusion matrix has two blocks: burst sites (36, 46, 58, 68; 56 partly) and non-burst sites (21, 55, 61). Pairs within the non-burst block are at 0.50. Within the burst block, 36 vs 58 is 0.81 (q < 0.05) and 1.00 in 21-28-58; 46 is not separable from 36, 58 or 68 in either session. 56 separates from every site (0.74–0.86), perhaps only through its 67 % burst probability. With 5 pulses per site no pair reaches q < 0.05 (the permutation p cannot fall much below 0.01–0.03), so site-pair claims need at least ~15 pulses per site.
+
+## D29. Poisson GLM coupling with NeMoS (`glm`)
+
+**Status:** Proposed 2026-11-16 (implemented; the owner asked for NeMoS with a default raised-cosine basis "for now"; the other choices below await review).
+
+**Why.** In the November cultures every pairwise edge is burst-driven, and the burst-removed analysis has too few spikes to test anything. A GLM conditions each pair on every other recorded unit and on the network rate, so chains and shared drive from recorded units need not create edges, and it keeps all spikes.
+
+**Model** (`meagraph.connectivity.glm`, registered as `glm`; signed). Per target, Poisson counts in 1 ms bins; log rate = intercept + coupling filters from every modelled unit (its own history included) + a network-rate covariate. Filters: NeMoS `RaisedCosineLogConv`, 6 functions over 25 ms (lags 1–25 bins; causal, current bin excluded). Network covariate: log(1 + other units' summed spikes smoothed with a causal half-Gaussian, SD 20 ms), standardized. Units with < 100 spikes are left out of the model entirely.
+
+**Choices, for review:**
+
+1. **Basis: 6 raised cosines over 25 ms** (owner: default for now). Covers the 32→14 peak at ~6 ms (Q16); delay resolution is coarse at the narrow early functions (DIV142 78→87 comes out at 1 ms where the correlogram peaks at 3.75 ms).
+2. **Network covariate must be causal.** The first version used a centred Gaussian. That lets the source's spikes *after* the target's spike into the covariate, and at the exact optimum it made independent units look inhibitory (p ~ 1e-11 on a 3-unit test). A past-only kernel removed this. `network_sigma_ms = 0` turns it off.
+3. **Ridge λ = 1** on the summed log-likelihood (prior SD 1 per coefficient, intercept free). Unpenalized fits do not converge: refractoriness sends the self-history coefficient at lag 1 to −∞ (LBFGS still improving after 1000 iterations; plain Newton diverges). With the penalty the fit has a unique optimum.
+4. **Solver: NeMoS LBFGS (float32, tol 1e-6, ≤ 200 iterations), then ≤ 3 float64 Newton steps.** LBFGS alone sometimes needed 1000 iterations (268 s for one target) to approach a tolerance float32 cannot reach. Newton from there converges in 1–2 steps and its Hessian is needed for the test anyway. `extra["max_gradient"]` records convergence per target. NeMoS `PopulationGLM` (all targets in one fit, with a feature mask for the per-target covariate) was slower (> 10 min on 16 units). BFGS and NonlinearCG did not converge.
+5. **Test: Wald χ² (6 df) on each coupling filter**, penalized Fisher information as the covariance, then BH (q = 0.05) over ordered pairs. Weight = filter value at its largest-magnitude lag (log gain); that lag is the delay.
+6. **Burst control as for every method** (all / no bursts / robust). Removing bursts leaves silent gaps that the GLM fits as low-rate periods.
+
+**Quick test (2026-11-16, one 600 s Hawkes network per scenario, 16 units; not yet the full benchmark grid):**
+
+| Network | Method | Precision | Recall | FPR | Indirect FP | Time |
+|---|---|---|---|---|---|---|
+| plain | `glm` | 1.00 | 1.00 | 0 | 0 | 110 s |
+| plain | `cch_jitter` | 0.87 | 1.00 | 0.019 | 3 | 1 s |
+| network bursts | `glm` | 0.93 | 1.00 | 0.009 | 0 | 156 s |
+| network bursts | `glm`, no network covariate | 0.34 | 1.00 | 0.244 | 15 | 91 s |
+| network bursts | `cch_jitter` | 0.96 | 1.00 | 0.005 | 1 | 1 s |
+| 25 % inhibitory units | `glm` | 1.00 | 1.00 | 0 | 0 | 93 s |
+| 25 % inhibitory units | `cch_jitter` | 1.00 | 0.95 | 0 | 0 | 1 s |
+
+The network covariate is what makes the GLM usable with bursts (precision 0.34 → 0.93). Inhibitory recall is 0: all 5 inhibitory pairs get negative weights but none is significant (p 0.5–0.9); TSPE (200 surrogates) finds none either, so this network is below the detection limit for inhibition in 10 min. Before the Newton polish and the causal covariate, the plain-network recall was 0.63 and the bursts precision 0.79.
+
+**DIV142 spontaneous** (8 active channels, 59 s): robust edges 78 → 87 (p 3e-27), 32 → 14 (6 ms, p 5e-11; the correlogram peak of Q16) and 87 → 32 (3 ms, p 0.005). Both known edges are found. The centred-covariate version also reported a robust "inhibitory" 87 → 78, which the causal covariate removed.
+
+## D30. Stimulus-evoked connectivity: port of `stim_connectivity.py`
+
+**Status:** Proposed 2026-11-16 (implemented as `meagraph graph --method stim_evoked`, `meagraph.connectivity.stim`; the choices below await the owner). `stim_connectivity.py` was removed after the port.
+
+**Problem.** Spontaneous connectivity in the November cultures is burst-driven (no robust edges). Stimulation with known per-pulse sites (D25) gives a causal handle: which electrodes respond to which site. `stim_connectivity.py` did this for a site-by-site protocol, but could not run (labels MCS does not write, removed `mcs.py`).
+
+**Kept from the script:** per site, responses per electrode against the pre-stimulus baseline; latency (first PSTH bin above baseline mean + 3 SD) and first-spike jitter; FDR over all site-electrode pairs; the direct-edge rule (latency ≤ 5 ms, jitter ≤ 1.5 ms); network deconvolution (`R (I + R)^-1`, R scaled to spectral radius 1/1.05) and its 0.03 weight cutoff, as an optional edge rule.
+
+**Changed:**
+
+1. **Spikes come from detection, not re-detection on artifact-subtracted voltage.** The script subtracted the across-trial median epoch and blanked 0.6 ms. Here the latency floor is detection's own blanking after each site's pulses (pulse + measured recovery + guard, 50 ms on the stimulated electrode itself), recorded per pair. On 2026-11-12 the floor is 9–12 ms, so **no direct (≤ 5 ms) edge is observable** and latencies equal to the floor are marked censored. Median-epoch subtraction would be a detection option (D9/Q9 territory), not part of this estimator.
+2. **Test at the level of pulses.** The script's permutation p (resampled pre-stimulus windows) cannot go below 1/(N+1) (D17), and a count test treats the many spikes of one evoked burst as independent (p ≈ 1e-90 from 5 pulses on 2026-11-12). Here: k = pulses with ≥ 1 spike in the window; under the null each pulse responds with its own baseline probability (fraction of its pre-pulse windows with a spike, (hits + 0.5)/(windows + 1)), so k is Poisson-binomial and p is its exact tail. Weight = spikes per pulse above baseline.
+3. **Window and baseline.** Response window from the floor to 30 ms (the script: 0.6–12 ms). Baseline: the 300 ms before each pulse, ending 2 ms before it (the pulse-locked artifact, D26/D28), in windows of the response window's length, skipping windows within 200 ms after an earlier pulse. FDR at q = 0.05 (the script: 0.01). Edge rule default `evoked` (any significant response), because `direct` is empty while the floor exceeds 5 ms.
+4. **Not every site is stimulated**, so deconvolution can only explain an edge through other stimulated sites.
+
+**What it can claim.** A site → electrode edge says that stimulating the site changes the electrode's firing 10–30 ms later. With 1000 mV pulses most of these responses are carried by evoked network bursts (D28), so they are polysynaptic and largely shared across burst-evoking sites, not monosynaptic connections. There is no burst control (stimulation periods are the point); `meagraph evoked` gives the burst-level view.
+
+**First results (2026-11-12, `meagraph graph --method stim_evoked`, 4 s each):** `21-28-58` (5 pulses per site): 83 pairs tested, 52 evoked edges, 0 direct. `21-55-43` (15 per site): 84 pairs, 53 evoked, 0 direct. Strongest edges are from the burst sites (36, 46, 58, 68) to 46, 76, 62 and 67 at 12–20 ms, responding on 93–100 % of pulses against 3–4 % baseline. 36 ↔ 46 is partly hardware crosstalk (zero-lag coupling between 36 and 46 in every November E-00278 recording).

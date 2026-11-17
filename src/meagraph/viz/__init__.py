@@ -140,7 +140,7 @@ def plot_waveforms(waveforms_uv: np.ndarray, cutout_ms: tuple[float, float], *, 
 
 
 def plot_ccg(counts: np.ndarray, lag_edges_ms: np.ndarray, *, window_ms: tuple[float, float] | None = None,
-             baseline: np.ndarray | None = None, ax=None):  # fmt: skip
+             baseline: np.ndarray | None = None, xlabel: str = "lag (ms), target after source", ax=None):  # fmt: skip
     """A cross-correlogram (target spikes at each lag after source spikes), with the synaptic
     window shaded and an optional baseline curve."""
     ax = _ax(ax)
@@ -151,7 +151,7 @@ def plot_ccg(counts: np.ndarray, lag_edges_ms: np.ndarray, *, window_ms: tuple[f
     if window_ms is not None:
         ax.axvspan(*window_ms, color=ACCENT, alpha=0.15, zorder=0)
     ax.axvline(0, color=MUTED, linewidth=0.6)
-    ax.set_xlabel("lag (ms), target after source")
+    ax.set_xlabel(xlabel)
     ax.set_ylabel("count")
     _clean(ax)
     return ax
@@ -232,10 +232,13 @@ def _node_info(result, node: int) -> str:
 
 def plot_connectivity(result, ccg: np.ndarray | None = None, lag_edges_ms: np.ndarray | None = None, *,
                       background_um: np.ndarray | None = None, background_ids: Sequence[str] | None = None,
-                      max_ccgs: int = 4, title: str = "", fig=None):  # fmt: skip
+                      max_ccgs: int = 4, title: str = "", window_ms: tuple[float, float] | None = None,
+                      xlabel: str = "lag (ms), target after source", fig=None):  # fmt: skip
     """Overview figure of one :class:`~meagraph.connectivity.ConnectivityResult`: the graph in 3D,
     and up to ``max_ccgs`` (4) correlograms in a 2 x 2 grid, strongest significant edges first.
-    ``ccg`` is ``(n, n, bins)`` source→target, as from ``meagraph.connectivity.cross_correlograms``.
+    ``ccg`` is ``(n, n, bins)`` source→target, as from ``meagraph.connectivity.cross_correlograms``
+    (or any per-pair histogram, e.g. pulse-triggered PSTHs, with ``xlabel`` and the shaded
+    ``window_ms`` overriding the defaults).
 
     Interactive (in a window): clicking an electrode shows its label, rate and edge counts, and
     swaps the correlograms for the strongest edges of that electrode; if it has fewer than
@@ -264,7 +267,7 @@ def plot_connectivity(result, ccg: np.ndarray | None = None, lag_edges_ms: np.nd
                  "click an electrode for its correlograms", fontsize=9)  # fmt: skip
     info = fig.text(0.01, 0.01, "", fontsize=8, family="monospace", va="bottom", color=INK)
     panels = [fig.add_subplot(grid[k // 2, 1 + k % 2]) for k in range(max_ccgs if ccg is not None else 0)]
-    window = result.params.get("window_ms")
+    window = window_ms if window_ms is not None else result.params.get("window_ms")
     arrow = "→" if result.directed else "–"
     state = {"node": None, "ring": None}
 
@@ -277,7 +280,7 @@ def plot_connectivity(result, ccg: np.ndarray | None = None, lag_edges_ms: np.nd
         for a, e in zip(panels, rows):
             a.set_visible(True)
             i, j = index[e["source"]], index[e["target"]]
-            plot_ccg(ccg[i, j], lag_edges_ms, window_ms=tuple(window) if window else None, ax=a)
+            plot_ccg(ccg[i, j], lag_edges_ms, window_ms=tuple(window) if window else None, xlabel=xlabel, ax=a)
             delay = f", {e['delay_ms']:.2f} ms" if np.isfinite(e["delay_ms"]) else ""
             kind = (" inh" if e["weight"] < 0 else " exc") if result.signed and e["significant"] else ""
             stat = f"p {e['p_value']:.1g}" if np.isfinite(e["p_value"]) else f"w {e['weight']:.3g}"
