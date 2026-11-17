@@ -84,3 +84,21 @@ def test_stim_connectivity_respects_the_blanking_floor():
     floor = np.full((1, 3), 20.0)  # the response at 15 ms is inside blanking
     res = stim_connectivity(trains, pulses, ["s"] * pulses.size, floor, readouts=["r"], config=StimConnectivityConfig())
     assert not res.significant[0, 1]
+
+
+def test_progress_reaches_slow_estimators_only():
+    pytest.importorskip("nemos")
+    from meagraph.connectivity.pipeline import burst_controlled
+
+    trains = _driven_pair(duration_s=60.0)
+    events = []
+    progress = lambda *e: events.append(e)  # noqa: E731
+    burst_controlled(trains, "glm", {"min_spikes": 50}, bursts=np.zeros((0, 2)), progress=progress)
+    steps = [e for e in events if e[3] > 1]
+    assert [e[2] for e in steps if e[1] == "all spikes"] == [0, 1, 2, 3]  # one step per target
+    assert {e[1] for e in steps} == {"all spikes", "without bursts"}
+    assert events[0] == ("glm", "all spikes", 0, 1) and events[-1] == ("glm", "without bursts", 1, 1)
+
+    events.clear()
+    burst_controlled(trains, "cch_hollow", bursts=np.zeros((0, 2)), progress=progress)
+    assert all(e[3] == 1 for e in events) and len(events) == 4  # start and end marks only

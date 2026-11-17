@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import csv
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
 from typing import Literal
@@ -17,7 +17,7 @@ import numpy as np
 import yaml
 from pydantic import BaseModel, ConfigDict, NonNegativeFloat
 
-from meagraph.connectivity.base import ConnectivityResult, estimate
+from meagraph.connectivity.base import ConnectivityResult, Progress, estimate
 from meagraph.connectivity.graph import load_result, save_result
 from meagraph.connectivity.stim import StimConnectivityConfig
 from meagraph.detect.bursts import BurstConfig, network_bursts
@@ -38,6 +38,12 @@ class GraphConfig(BaseModel):
     bursts: BurstConfig = BurstConfig()
 
 
+# ``progress(method, stage, done, total)`` for graph pipelines. ``stage`` is "all spikes" or
+# "without bursts". Each estimate reports (0, 1) before and (1, 1) after; estimators with a long
+# per-target loop (``glm``) also report each step in between, with total = number of targets.
+GraphProgress = Callable[[str, str, int, int], None]
+
+
 @dataclass(frozen=True, eq=False)
 class BurstControlled:
     all: ConnectivityResult
@@ -52,12 +58,23 @@ def burst_controlled(
     config: BaseModel | dict | None = None,
     bursts: np.ndarray | None = None,
     burst_config: BurstConfig | None = None,
+    progress: GraphProgress | None = None,
 ) -> BurstControlled:
-    """``bursts`` defaults to network bursts detected on ``trains`` itself."""
+    """``bursts`` defaults to network bursts detected on ``trains`` itself. See :data:`GraphProgress`."""
     periods = network_bursts(trains, burst_config) if bursts is None else bursts
-    full = estimate(trains, method, config)
-    part = estimate(trains.without_periods(periods), method, config)
+    full = _estimate_reporting(trains, method, config, "all spikes", progress)
+    part = _estimate_reporting(trains.without_periods(periods), method, config, "without bursts", progress)
     return BurstControlled(full, part, replace(full, significant=robust_mask(full, part)), periods)
+
+
+def _estimate_reporting(trains, method, config, stage: str, progress: GraphProgress | None) -> ConnectivityResult:
+    if progress is None:
+        return estimate(trains, method, config)
+    progress(method, stage, 0, 1)
+    step: Progress = lambda done, total: progress(method, stage, done, total)  # noqa: E731
+    result = estimate(trains, method, config, progress=step)
+    progress(method, stage, 1, 1)
+    return result
 
 
 def robust_mask(full: ConnectivityResult, part: ConnectivityResult, full_sig=None, part_sig=None) -> np.ndarray:
@@ -74,6 +91,7 @@ def graphs_from_detection(
     detection: DetectionResult,
     methods: Sequence[str] = ("cch_jitter", "cch_hollow", "sttc"),
     config: GraphConfig | None = None,
+    progress: GraphProgress | None = None,
 ) -> dict[str, BurstControlled]:
     """Connectivity among a detection result's channels, one :class:`BurstControlled` per method.
 
@@ -86,7 +104,7 @@ def graphs_from_detection(
     chosen = list(detection.active_channels) if cfg.channels == "active" else usable
     base = analysed_trains(detection, cfg)
     periods = network_bursts(base.select(usable), cfg.bursts)
-    return {m: burst_controlled(base.select(chosen), m, bursts=periods) for m in methods}
+    return {m: burst_controlled(base.select(chosen), m, bursts=periods, progress=progress) for m in methods}
 
 
 def analysed_trains(detection: DetectionResult, config: GraphConfig) -> SpikeTrains:

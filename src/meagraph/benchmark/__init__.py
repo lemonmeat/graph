@@ -178,8 +178,10 @@ def run_benchmark(
     burst_config: BurstConfig | None = None,
     n_jobs: int = 1,
     progress=print,
+    checkpoint: str | Path | None = None,
 ) -> list[dict]:
-    """Every (scenario, seed) pair is one job; ``n_jobs`` > 1 runs them in worker processes."""
+    """Every (scenario, seed) pair is one job; ``n_jobs`` > 1 runs them in worker processes.
+    With ``checkpoint``, the rows so far are written there after every job."""
     jobs = [(name, cfg, seed, tuple(methods), method_overrides, burst_config) for name, cfg in scenario_list for seed in seeds]
     rows: list[dict] = []
     if n_jobs > 1:
@@ -189,11 +191,15 @@ def run_benchmark(
             results = pool.map(_run_one, jobs)
             for k, (job, job_rows) in enumerate(zip(jobs, results), 1):
                 rows.extend(job_rows)
+                if checkpoint:
+                    write_rows(rows, checkpoint)
                 if progress:
                     progress(f"[{k}/{len(jobs)}] {job[0]} seed {job[2]}")
     else:
         for k, job in enumerate(jobs, 1):
             rows.extend(_run_one(job))
+            if checkpoint:
+                write_rows(rows, checkpoint)
             if progress:
                 progress(f"[{k}/{len(jobs)}] {job[0]} seed {job[2]}")
     return rows

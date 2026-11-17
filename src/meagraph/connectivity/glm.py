@@ -46,7 +46,7 @@ from pydantic import BaseModel, ConfigDict, NonNegativeFloat, PositiveFloat, Pos
 from scipy.signal import fftconvolve
 from scipy.stats import chi2
 
-from meagraph.connectivity.base import ConnectivityResult, empty_matrices, register
+from meagraph.connectivity.base import ConnectivityResult, Progress, empty_matrices, register
 from meagraph.connectivity.stats import fdr_mask
 from meagraph.spiketrains import SpikeTrains
 
@@ -166,7 +166,7 @@ class PoissonGLM:
                 raise ValueError("window_ms / bin_ms must exceed n_basis")
             return self
 
-    def estimate(self, trains: SpikeTrains, config: Config | None = None) -> ConnectivityResult:
+    def estimate(self, trains: SpikeTrains, config: Config | None = None, progress: Progress | None = None) -> ConnectivityResult:
         os.environ.setdefault("JAX_PLATFORMS", "cpu")
         cfg = config or self.Config()
         n, nb = trains.n_units, cfg.n_basis
@@ -184,6 +184,8 @@ class PoissonGLM:
             x_hist = feats[valid]
             total = counts.sum(axis=1)
             network_coef, max_grad = np.full(n, np.nan), np.full(n, np.nan)
+            if progress:
+                progress(0, units.size)
             for a, j in enumerate(units):
                 y = counts[valid, j]
                 x = x_hist
@@ -209,6 +211,8 @@ class PoissonGLM:
                     p_values[i, j] = float(chi2.sf(stat, nb))
                     k = int(np.argmax(np.abs(h)))
                     weights[i, j], delays[i, j] = h[k], lags_ms[k]
+                if progress:
+                    progress(a + 1, units.size)
             extra.update(filters=filters, network_coef=network_coef, max_gradient=max_grad)
         significant = fdr_mask(p_values, cfg.q)
         return ConnectivityResult(

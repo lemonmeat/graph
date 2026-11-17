@@ -174,11 +174,14 @@ def detect_spikes(
     recording: BaseRecording,
     stim: Sequence[StimEvents] = (),
     config: DetectionConfig | None = None,
+    progress_bar: bool = False,
 ) -> DetectionResult:
     """Detect negative threshold crossings on every channel.
 
     ``recording`` is a session recording (raw units, probe attached). ``stim`` gives the
     stimulation events to blank; a ``site`` on an event marks that electrode for exclusion.
+    ``progress_bar`` shows SpikeInterface's bar over the peak-detection chunks (the slow step).
+    It is not part of the config, since it does not change the result.
     """
     cfg = config or DetectionConfig()
     fs = recording.get_sampling_frequency()
@@ -193,7 +196,7 @@ def detect_spikes(
         filt, method="by_channel",
         method_kwargs=dict(peak_sign="both", detect_threshold=cfg.threshold_sigma,
                            exclude_sweep_ms=cfg.refractory_ms, noise_levels=noise),
-        job_kwargs=dict(n_jobs=cfg.n_jobs, chunk_duration=f"{cfg.chunk_duration_s}s", progress_bar=False),
+        job_kwargs=dict(n_jobs=cfg.n_jobs, chunk_duration=f"{cfg.chunk_duration_s}s", progress_bar=progress_bar),
     )  # fmt: skip
     sample, chan, amp = peaks["sample_index"].astype(np.int64), peaks["channel_index"].astype(np.int64), peaks["amplitude"]
 

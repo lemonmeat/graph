@@ -7,6 +7,8 @@ one class with a ``name``, a pydantic ``Config`` and an ``estimate`` method, dec
 
 from __future__ import annotations
 
+import inspect
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import ClassVar, Protocol
 
@@ -69,20 +71,37 @@ class Estimator(Protocol):
 
 ESTIMATORS: dict[str, type] = {}
 
+# ``progress(done, total)``: called by estimators with a long per-target loop (``glm``) after each
+# step. Estimators whose ``estimate`` takes no ``progress`` argument are fast and never call it.
+Progress = Callable[[int, int], None]
+
 
 def register(cls):
     ESTIMATORS[cls.name] = cls
     return cls
 
 
-def estimate(trains: SpikeTrains, method: str, config: BaseModel | dict | None = None) -> ConnectivityResult:
-    """Run a registered estimator by name; ``config`` may be the method's Config or a dict of overrides."""
+def estimate(
+    trains: SpikeTrains, method: str, config: BaseModel | dict | None = None, progress: Progress | None = None
+) -> ConnectivityResult:
+    """Run a registered estimator by name; ``config`` may be the method's Config or a dict of overrides.
+
+    ``progress`` reaches the estimator only if it reports progress (see :data:`Progress`).
+    """
     if method not in ESTIMATORS:
         raise KeyError(f"unknown method {method!r}; available: {sorted(ESTIMATORS)}")
     cls = ESTIMATORS[method]
     if isinstance(config, dict):
         config = cls.Config(**config)
-    return cls().estimate(trains, config or cls.Config())
+    est = cls()
+    if progress is not None and reports_progress(method):
+        return est.estimate(trains, config or cls.Config(), progress=progress)
+    return est.estimate(trains, config or cls.Config())
+
+
+def reports_progress(method: str) -> bool:
+    """Whether the estimator calls a ``progress`` callback (only slow, per-target estimators do)."""
+    return "progress" in inspect.signature(ESTIMATORS[method].estimate).parameters
 
 
 def empty_matrices(n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:

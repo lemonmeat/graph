@@ -1223,6 +1223,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "scipy" },
     { name = "spikeinterface" },
+    { name = "tqdm" },
 ]
 
 [package.optional-dependencies]
@@ -1260,6 +1261,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6" },
     { name = "scipy", specifier = ">=1.13" },
     { name = "spikeinterface", specifier = ">=0.105,<0.106" },
+    { name = "tqdm", specifier = ">=4.60" },
 ]
 provides-extras = ["viewer", "nwb", "glm", "synth", "dev"]
 

@@ -268,6 +268,8 @@ def plot_connectivity(result, ccg: np.ndarray | None = None, lag_edges_ms: np.nd
     info = fig.text(0.01, 0.01, "", fontsize=8, family="monospace", va="bottom", color=INK)
     panels = [fig.add_subplot(grid[k // 2, 1 + k % 2]) for k in range(max_ccgs if ccg is not None else 0)]
     window = window_ms if window_ms is not None else result.params.get("window_ms")
+    if window is not None and np.ndim(window) == 0:  # one length, e.g. glm's coupling filter: lags (0, length]
+        window = (0.0, float(window))
     arrow = "→" if result.directed else "–"
     state = {"node": None, "ring": None}
 

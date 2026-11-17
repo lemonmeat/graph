@@ -97,6 +97,46 @@ def _audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _show_progress(args: argparse.Namespace) -> bool:
+    """``--progress/--no-progress``; by default, bars only when stderr is a terminal (not a log file)."""
+    return sys.stderr.isatty() if args.progress is None else args.progress
+
+
+class _GraphProgress:
+    """Reports :data:`meagraph.connectivity.pipeline.GraphProgress` events.
+
+    One line when each method starts. Multi-step estimates (``glm``, one step per target) get a
+    tqdm bar on a terminal, or a line every ~20 % of targets otherwise (log files, ``nohup``).
+    """
+
+    def __init__(self, bars: bool):
+        self.bars, self.method, self.key, self.bar = bars, None, None, None
+
+    def __call__(self, method: str, stage: str, done: int, total: int) -> None:
+        if method != self.method:
+            self.close()
+            self.method = method
+            print(f"  {method}: estimating...", flush=True)
+        if total <= 1:  # the start/end marks of every estimate
+            if done == total:
+                self.close()
+            return
+        if self.bars:
+            if self.key != (method, stage):
+                from tqdm.auto import tqdm
+
+                self.close()
+                self.key, self.bar = (method, stage), tqdm(total=total, desc=f"    {stage}", unit="target", leave=False)
+            self.bar.update(done - self.bar.n)
+        elif done and (done == total or done % max(1, total // 5) == 0):
+            print(f"    {stage}: {done}/{total} targets", flush=True)
+
+    def close(self) -> None:
+        if self.bar is not None:
+            self.bar.close()
+        self.key, self.bar = None, None
+
+
 def _detect(args: argparse.Namespace) -> int:
     from meagraph.detect import DetectionConfig, detect_spikes, save_detection
     from meagraph.detect.store import default_detection_folder
@@ -106,7 +146,7 @@ def _detect(args: argparse.Namespace) -> int:
         start = time.time()
         print(Path(path).name)
         session = _session(path, args)
-        result = detect_spikes(session.recording, session.stim, config)
+        result = detect_spikes(session.recording, session.stim, config, progress_bar=_show_progress(args))
         out = Path(args.out) if args.out else default_detection_folder(path)
         save_detection(result, out, inputs=[path], overwrite=args.overwrite)
         n = result.trains.n_spikes()
@@ -146,11 +186,17 @@ def _graph(args: argparse.Namespace) -> int:
             print("  `--channels all` builds a graph from every electrode anyway, but without the check its edges may be noise")
         return 0
     methods = [m for m in args.method if m != "stim_evoked"]
-    graphs = graphs_from_detection(detection, methods=methods, config=config) if methods else {}
     print(f"{folder.parent.name}: {len(chosen)} {args.channels} channels {list(chosen)}")
     if methods and detection.stim and config.exclude_stim_post_ms > 0:
         n_pulses = sum(s.n for s in _pulses(detection.stim))
         print(f"  excluded {n_pulses} stimulation pulses (pulse to +{config.exclude_stim_post_ms:g} ms)")
+    progress = _GraphProgress(bars=_show_progress(args))
+    try:
+        graphs = graphs_from_detection(detection, methods=methods, config=config, progress=progress) if methods else {}
+    finally:
+        progress.close()
+    if methods:
+        print()  # separates the progress lines from the results
     for method, bc in graphs.items():
         out = save_burst_controlled(bc, folder.parent / f"graph_{method}", config, inputs=[folder / "spikes.npz"], overwrite=True)
         n_all, n_quiet, n_robust = (int(r.significant.sum()) // (1 if r.directed else 2) for r in (bc.all, bc.no_bursts, bc.robust))
@@ -274,16 +320,20 @@ def _benchmark(args: argparse.Namespace) -> int:
     from meagraph.synth import NetworkConfig
 
     progress = lambda message: print(message, flush=True)  # noqa: E731
+    methods = {"methods": tuple(args.methods)} if args.methods else {}
+    checkpoint = Path(args.out) / "benchmark.csv"  # rewritten after every network, so a crash loses little
     if args.quick:
         small = NetworkConfig(n_units=8)
         todo = scenarios(durations_s=(300,), weights=(0.1,), base=small) + inhibition_scenarios(durations_s=(300,), bursts=(False,), base=small)[:1]
         overrides = {m: {"n_surrogates": 200} for m in ("cch_jitter", "sttc", "tspe", "cfp")}
-        rows = run_benchmark(todo, seeds=(0,), method_overrides=overrides, n_jobs=args.n_jobs, progress=progress)
+        rows = run_benchmark(todo, seeds=(0,), method_overrides=overrides, n_jobs=args.n_jobs, progress=progress,
+                             checkpoint=checkpoint, **methods)
     else:
         # TSPE and CFP use 200 surrogates here: their p-values come from a fitted normal (D17), and
         # 1000 would make the run several hours. Real-data defaults stay at 1000.
         overrides = {m: {"n_surrogates": 200} for m in ("tspe", "cfp")}
-        rows = run_benchmark(scenarios() + inhibition_scenarios(), method_overrides=overrides, n_jobs=args.n_jobs, progress=progress)
+        rows = run_benchmark(scenarios() + inhibition_scenarios(), method_overrides=overrides, n_jobs=args.n_jobs,
+                             progress=progress, checkpoint=checkpoint, **methods)
     out = write_rows(rows, Path(args.out) / "benchmark.csv")
     for spikes in ("all", "robust"):
         print(f"\n{spikes} spikes:")
@@ -378,6 +428,8 @@ def build_parser() -> argparse.ArgumentParser:
     session_args(p)
     p.add_argument("--out", help="output folder (default: results/<recording>/detect next to the file)")
     p.add_argument("--n-jobs", type=int, default=1)
+    p.add_argument("--progress", action=argparse.BooleanOptionalAction, default=None,
+                   help="progress bar over the detection chunks (default: on when the output is a terminal, off in log files)")
     p.add_argument("--overwrite", action="store_true")
     p.set_defaults(func=_detect)
 
@@ -392,6 +444,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stim-response-ms", type=float, default=30.0, help="stim_evoked: response window end after pulse onset")
     p.add_argument("--stim-rule", choices=["evoked", "direct", "deconvolved"], default="evoked",
                    help="stim_evoked edges: any significant response, also short-latency and low-jitter, or also surviving deconvolution")
+    p.add_argument("--progress", action=argparse.BooleanOptionalAction, default=None,
+                   help="progress bars for slow estimators (glm: one step per target) (default: on when the output is a terminal, off in log files)")
     p.set_defaults(func=_graph)
 
     p = sub.add_parser("evoked", help="evoked responses per stimulation site: bursts vs sham, electrode responses, site decoding")
@@ -419,6 +473,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--quick", action="store_true", help="one small scenario per condition (seconds)")
     p.add_argument("--out", default="results/benchmark")
     p.add_argument("--n-jobs", type=int, default=4, help="simulated networks processed in parallel")
+    p.add_argument("--methods", nargs="+", default=None,
+                   help="estimators to score (default: cch_hollow cch_jitter sttc tspe cfp; glm takes ~9 CPU-hours)")
     p.set_defaults(func=_benchmark)
 
     p = sub.add_parser("view", help="interactive viewer with the 4x4x4 electrode selector")

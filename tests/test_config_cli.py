@@ -56,3 +56,18 @@ def test_cli_info_and_probes(mcs_file, capsys):
     assert "Data Acquisition (1)" in out and "STG 1 Single Pulse Start" in out
     assert main(["probes"]) == 0
     assert "cube4x4x4_E-00303" in capsys.readouterr().out
+
+
+def test_graph_progress_lines_without_a_terminal(capsys):
+    from meagraph.cli import _GraphProgress
+
+    report = _GraphProgress(bars=False)
+    report("cch_hollow", "all spikes", 0, 1)
+    report("cch_hollow", "all spikes", 1, 1)
+    report("glm", "all spikes", 0, 1)
+    for k in range(11):
+        report("glm", "all spikes", k, 10)
+    report("glm", "all spikes", 1, 1)
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "  cch_hollow: estimating..." and out[1] == "  glm: estimating..."
+    assert out[2:] == [f"    all spikes: {k}/10 targets" for k in (2, 4, 6, 8, 10)]
